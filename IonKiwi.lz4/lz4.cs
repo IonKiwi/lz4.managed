@@ -480,33 +480,33 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		internal static unsafe int LZ4_decompress_safe(char* source, char* dest, int compressedSize, int maxDecompressedSize) {
+		private static unsafe int LZ4_decompress_safe(char* source, char* dest, int compressedSize, int maxDecompressedSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize,
 																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
 																		(byte*)dest, null, 0);
 		}
 
-		internal static unsafe int LZ4_decompress_safe_withPrefix64k(char* source, char* dest, int compressedSize, int maxOutputSize) {
+		private static unsafe int LZ4_decompress_safe_withPrefix64k(char* source, char* dest, int compressedSize, int maxOutputSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
 																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.withPrefix64k,
 																		(byte*)dest - 64 * (1 << 10), null, 0);
 		}
 
-		internal static unsafe int LZ4_decompress_safe_withSmallPrefix(char* source, char* dest, int compressedSize, int maxOutputSize,
+		private static unsafe int LZ4_decompress_safe_withSmallPrefix(char* source, char* dest, int compressedSize, int maxOutputSize,
 																							 size_t prefixSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
 																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
 																		(byte*)dest - prefixSize, null, 0);
 		}
 
-		internal static unsafe int LZ4_decompress_safe_doubleDict(char* source, char* dest, int compressedSize, int maxOutputSize,
+		private static unsafe int LZ4_decompress_safe_doubleDict(char* source, char* dest, int compressedSize, int maxOutputSize,
 																	 size_t prefixSize, void* dictStart, size_t dictSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
 																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.usingExtDict,
 																		(byte*)dest - prefixSize, (byte*)dictStart, dictSize);
 		}
 
-		internal static unsafe int LZ4_decompress_safe_forceExtDict(char* source, char* dest,
+		private static unsafe int LZ4_decompress_safe_forceExtDict(char* source, char* dest,
 
 																		 int compressedSize, int maxOutputSize,
 
@@ -516,7 +516,7 @@ namespace IonKiwi.lz4 {
 																		(byte*)dest, (byte*)dictStart, dictSize);
 		}
 
-		internal static unsafe int
+		private static unsafe int
 		LZ4_decompress_generic(
 									char* src,
 								 char* dst,
@@ -817,7 +817,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		internal static unsafe int LZ4_compress_generic(
+		private static unsafe int LZ4_compress_generic(
 										 LZ4_stream_t_internal* cctx,
 											char* source,
 										 char* dest,
