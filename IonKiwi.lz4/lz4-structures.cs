@@ -133,4 +133,31 @@ namespace IonKiwi.lz4 {
 		public int off;
 		public int len;
 	}
+
+	internal unsafe struct XXH32_state_s {
+		public uint total_len_32;
+		public uint large_len;
+		public uint v1;
+		public uint v2;
+		public uint v3;
+		public uint v4;
+		public fixed uint mem32[4];
+		public uint memsize;
+		public uint reserved;   /* never read nor write, might be removed in a future version */
+	};
+
+	internal enum XXH_errorcode {
+		XXH_OK = 0,
+		XXH_ERROR
+	}
+
+	internal enum XXH_endianess {
+		XXH_bigEndian = 0,
+		XXH_littleEndian = 1
+	}
+
+	internal enum XXH_alignment {
+		XXH_aligned,
+		XXH_unaligned
+	}
 }

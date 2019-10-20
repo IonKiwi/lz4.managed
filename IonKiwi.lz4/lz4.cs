@@ -53,6 +53,12 @@ namespace IonKiwi.lz4 {
 		internal const int OPTIMAL_ML = (int)((ML_MASK - 1) + MINMATCH);
 		internal const int LZ4_OPT_NUM = (1 << 12);
 
+		internal const uint PRIME32_1 = 2654435761U;
+		internal const uint PRIME32_2 = 2246822519U;
+		internal const uint PRIME32_3 = 3266489917U;
+		internal const uint PRIME32_4 = 668265263U;
+		internal const uint PRIME32_5 = 374761393U;
+
 		private static uint[] DeBruijnBytePos64 = { 0, 0, 0, 0, 0, 1, 1, 2,
 																										 0, 3, 1, 3, 1, 4, 2, 7,
 																										 0, 2, 3, 6, 1, 5, 3, 5,
@@ -82,7 +88,442 @@ namespace IonKiwi.lz4 {
         new cParams_t() { strat=lz4hc_strat_e.lz4opt, nbSearches=16384, targetLength=LZ4_OPT_NUM },  /* 12==LZ4HC_CLEVEL_MAX */
     };
 
-		internal static unsafe int LZ4_decompress_safe_continue(LZ4_streamDecode_u* LZ4_streamDecode, char* source, char* dest, int compressedSize, int maxOutputSize) {
+		//internal static unsafe int LZ4_freeStream(LZ4_stream_u* LZ4_stream) {
+		//	if (LZ4_stream == null) return 0;   /* support free on NULL */
+		//	//DEBUGLOG(5, "LZ4_freeStream %p", LZ4_stream);
+		//	//FREEMEM(LZ4_stream);
+		//	return (0);
+		//}
+
+		//internal static unsafe int LZ4_freeStreamHC(LZ4_streamHC_u* LZ4_streamHCPtr) {
+		//	//DEBUGLOG(4, "LZ4_freeStreamHC(%p)", LZ4_streamHCPtr);
+		//	if (LZ4_streamHCPtr == null) return 0;  /* support free on NULL */
+
+		//	//FREEMEM(LZ4_streamHCPtr);
+		//	return 0;
+		//}
+
+		//internal static unsafe XXH_errorcode XXH32_freeState(XXH32_state_s* statePtr) {
+		//	//XXH_free(statePtr);
+		//	return XXH_errorcode.XXH_OK;
+		//}
+
+		//internal static unsafe int LZ4_freeStreamDecode(LZ4_streamDecode_u* LZ4_stream) {
+		//	if (LZ4_stream == null) { return 0; }  /* support free on NULL */
+		//	//FREEMEM(LZ4_stream);
+		//	return 0;
+		//}
+
+		private sealed class AllocWrapper : IDisposable {
+
+			private IntPtr _handle;
+
+			private AllocWrapper(IntPtr handle) {
+				_handle = handle;
+			}
+
+			public static unsafe T* Alloc<T>(out IDisposable disposable) where T : unmanaged {
+				var handle = Marshal.AllocHGlobal(sizeof(T));
+				disposable = new AllocWrapper(handle);
+				return (T*)handle;
+			}
+
+			public void Dispose() {
+				Marshal.FreeHGlobal(_handle);
+			}
+		}
+
+		internal static unsafe LZ4_stream_u* LZ4_createStream(out IDisposable disposable) {
+			var lz4s = AllocWrapper.Alloc<LZ4_stream_u>(out disposable);
+			//LZ4_stream_u * const lz4s = (LZ4_stream_u*)ALLOC(sizeof(LZ4_stream_t));
+			//LZ4_STATIC_ASSERT(LZ4_STREAMSIZE >= sizeof(LZ4_stream_t_internal));    /* A compilation error here means LZ4_STREAMSIZE is not large enough */
+			//DEBUGLOG(4, "LZ4_createStream %p", lz4s);
+			if (lz4s == null) return null;
+			LZ4_initStream(lz4s, (uint)sizeof(LZ4_stream_u));
+			return lz4s;
+		}
+
+		internal static unsafe LZ4_streamHC_u* LZ4_createStreamHC(out IDisposable disposable) {
+			var LZ4_streamHCPtr = AllocWrapper.Alloc<LZ4_streamHC_u>(out disposable);
+			//LZ4_streamHC_u* LZ4_streamHCPtr = (LZ4_streamHC_u*)ALLOC(sizeof(LZ4_streamHC_u));
+			if (LZ4_streamHCPtr == null) return null;
+			LZ4_initStreamHC(LZ4_streamHCPtr, (uint)sizeof(LZ4_streamHC_u));  /* full initialization, malloc'ed buffer can be full of garbage */
+			return LZ4_streamHCPtr;
+		}
+
+		internal static unsafe LZ4_streamDecode_u* LZ4_createStreamDecode(out IDisposable disposable) {
+			var lz4s = AllocWrapper.Alloc<LZ4_streamDecode_u>(out disposable);
+			//LZ4_streamDecode_u* lz4s = (LZ4_streamDecode_u*)ALLOC_AND_ZERO(sizeof(LZ4_streamDecode_u));
+			//LZ4_STATIC_ASSERT(LZ4_STREAMDECODESIZE >= sizeof(LZ4_streamDecode_t_internal));    /* A compilation error here means LZ4_STREAMDECODESIZE is not large enough */
+			return lz4s;
+		}
+
+		internal static unsafe XXH32_state_s* XXH32_createState(out IDisposable disposable) {
+			//return (XXH32_state_t*)XXH_malloc(sizeof(XXH32_state_t));
+			return AllocWrapper.Alloc<XXH32_state_s>(out disposable);
+		}
+
+		internal static unsafe XXH_errorcode XXH32_reset(XXH32_state_s* statePtr, uint seed) {
+			XXH32_state_s state;   /* using a local state to memcpy() in order to avoid strict-aliasing warnings */
+			Unsafe.InitBlock(&state, 0, (uint)sizeof(XXH32_state_s));
+			state.v1 = seed + PRIME32_1 + PRIME32_2;
+			state.v2 = seed + PRIME32_2;
+			state.v3 = seed + 0;
+			state.v4 = seed - PRIME32_1;
+			/* do not write into reserved, planned to be removed in a future version */
+			Unsafe.CopyBlock(statePtr, &state, (uint)sizeof(XXH32_state_s) - sizeof(uint));
+			return XXH_errorcode.XXH_OK;
+		}
+
+		internal static unsafe uint XXH32_digest(XXH32_state_s* state_in) {
+
+			XXH_endianess endian_detected = BitConverter.IsLittleEndian ? XXH_endianess.XXH_littleEndian : XXH_endianess.XXH_bigEndian;
+
+			if ((endian_detected == XXH_endianess.XXH_littleEndian))
+				return XXH32_digest_endian(state_in, XXH_endianess.XXH_littleEndian);
+			else
+				return XXH32_digest_endian(state_in, XXH_endianess.XXH_bigEndian);
+		}
+
+		internal static unsafe uint XXH32(void* input, size_t len, uint seed) {
+			XXH_endianess endian_detected = BitConverter.IsLittleEndian ? XXH_endianess.XXH_littleEndian : XXH_endianess.XXH_bigEndian;
+
+			if ((endian_detected == XXH_endianess.XXH_littleEndian))
+				return XXH32_endian_align(input, len, seed, XXH_endianess.XXH_littleEndian, XXH_alignment.XXH_unaligned);
+			else
+				return XXH32_endian_align(input, len, seed, XXH_endianess.XXH_bigEndian, XXH_alignment.XXH_unaligned);
+		}
+
+		internal static unsafe XXH_errorcode XXH32_update(XXH32_state_s* state_in, void* input, size_t len) {
+			XXH_endianess endian_detected = BitConverter.IsLittleEndian ? XXH_endianess.XXH_littleEndian : XXH_endianess.XXH_bigEndian;
+
+			if ((endian_detected == XXH_endianess.XXH_littleEndian))
+				return XXH32_update_endian(state_in, input, len, XXH_endianess.XXH_littleEndian);
+			else
+				return XXH32_update_endian(state_in, input, len, XXH_endianess.XXH_bigEndian);
+		}
+
+		private static unsafe XXH_errorcode XXH32_update_endian(XXH32_state_s* state, void* input, size_t len, XXH_endianess endian) {
+			if (input == null)
+				return XXH_errorcode.XXH_ERROR;
+
+			{
+				byte* p = (byte*)input;
+				byte* bEnd = p + len;
+
+				state->total_len_32 += (uint)len;
+				state->large_len |= ((len >= 16) ? 1u : 0) | ((state->total_len_32 >= 16) ? 1u : 0);
+
+				if (state->memsize + len < 16) {   /* fill in tmp buffer */
+					Unsafe.CopyBlock((byte*)(state->mem32) + state->memsize, input, len);
+					state->memsize += (uint)len;
+					return XXH_errorcode.XXH_OK;
+				}
+
+				if (state->memsize != 0) {   /* some data left from previous update */
+					Unsafe.CopyBlock((byte*)(state->mem32) + state->memsize, input, 16 - state->memsize);
+					{
+						uint* p32 = state->mem32;
+						state->v1 = XXH32_round(state->v1, XXH_readLE32(p32, endian)); p32++;
+						state->v2 = XXH32_round(state->v2, XXH_readLE32(p32, endian)); p32++;
+						state->v3 = XXH32_round(state->v3, XXH_readLE32(p32, endian)); p32++;
+						state->v4 = XXH32_round(state->v4, XXH_readLE32(p32, endian));
+					}
+					p += 16 - state->memsize;
+					state->memsize = 0;
+				}
+
+				if (p <= bEnd - 16) {
+					byte* limit = bEnd - 16;
+					uint v1 = state->v1;
+					uint v2 = state->v2;
+					uint v3 = state->v3;
+					uint v4 = state->v4;
+
+					do {
+						v1 = XXH32_round(v1, XXH_readLE32(p, endian)); p += 4;
+						v2 = XXH32_round(v2, XXH_readLE32(p, endian)); p += 4;
+						v3 = XXH32_round(v3, XXH_readLE32(p, endian)); p += 4;
+						v4 = XXH32_round(v4, XXH_readLE32(p, endian)); p += 4;
+					} while (p <= limit);
+
+					state->v1 = v1;
+					state->v2 = v2;
+					state->v3 = v3;
+					state->v4 = v4;
+				}
+
+				if (p < bEnd) {
+					Unsafe.CopyBlock(state->mem32, p, (size_t)(bEnd - p));
+					state->memsize = (uint)(bEnd - p);
+				}
+			}
+
+			return XXH_errorcode.XXH_OK;
+		}
+
+		private static unsafe uint XXH_readLE32(void* ptr, XXH_endianess endian) {
+			return XXH_readLE32_align(ptr, endian, XXH_alignment.XXH_unaligned);
+		}
+
+		private static unsafe uint XXH32_endian_align(void* input, size_t len, uint seed,
+													XXH_endianess endian, XXH_alignment align) {
+
+			byte* p = (byte*)input;
+			byte* bEnd = p + len;
+			uint h32;
+
+			if (len >= 16) {
+				byte* limit = bEnd - 15;
+				uint v1 = seed + PRIME32_1 + PRIME32_2;
+				uint v2 = seed + PRIME32_2;
+				uint v3 = seed + 0;
+				uint v4 = seed - PRIME32_1;
+
+				do {
+					v1 = XXH32_round(v1, XXH_readLE32_align(p, endian, align)); p += 4;
+					v2 = XXH32_round(v2, XXH_readLE32_align(p, endian, align)); p += 4;
+					v3 = XXH32_round(v3, XXH_readLE32_align(p, endian, align)); p += 4;
+					v4 = XXH32_round(v4, XXH_readLE32_align(p, endian, align)); p += 4;
+				} while (p < limit);
+
+				h32 = XXH_rotl32(v1, 1) + XXH_rotl32(v2, 7)
+						+ XXH_rotl32(v3, 12) + XXH_rotl32(v4, 18);
+			}
+			else {
+				h32 = seed + PRIME32_5;
+			}
+
+			h32 += (uint)len;
+
+			return XXH32_finalize(h32, p, len & 15, endian, align);
+		}
+
+		private static uint XXH32_round(uint seed, uint input) {
+			seed += input * PRIME32_2;
+			seed = XXH_rotl32(seed, 13);
+			seed *= PRIME32_1;
+			return seed;
+		}
+
+		private static unsafe uint XXH32_digest_endian(XXH32_state_s* state, XXH_endianess endian) {
+			uint h32;
+
+			if (state->large_len != 0) {
+				h32 = XXH_rotl32(state->v1, 1)
+						+ XXH_rotl32(state->v2, 7)
+						+ XXH_rotl32(state->v3, 12)
+						+ XXH_rotl32(state->v4, 18);
+			}
+			else {
+				h32 = state->v3 /* == seed */ + PRIME32_5;
+			}
+
+			h32 += state->total_len_32;
+
+			return XXH32_finalize(h32, state->mem32, state->memsize, endian, XXH_alignment.XXH_aligned);
+		}
+
+		private static uint XXH_rotl32(uint x, int r) {
+			return ((x << r) | (x >> (32 - r)));
+		}
+
+		private static unsafe uint XXH_read32(void* memPtr) {
+			uint val;
+			Unsafe.CopyBlock(&val, memPtr, 4);
+			return val;
+		}
+
+		private static uint XXH_swap32(uint x) {
+			return ((x << 24) & 0xff000000) |
+							((x << 8) & 0x00ff0000) |
+							((x >> 8) & 0x0000ff00) |
+							((x >> 24) & 0x000000ff);
+		}
+
+		private static unsafe uint XXH_readLE32_align(void* ptr, XXH_endianess endian, XXH_alignment align) {
+			if (align == XXH_alignment.XXH_unaligned)
+				return endian == XXH_endianess.XXH_littleEndian ? XXH_read32(ptr) : XXH_swap32(XXH_read32(ptr));
+			else
+				return endian == XXH_endianess.XXH_littleEndian ? *(uint*)ptr : XXH_swap32(*(uint*)ptr);
+		}
+
+		private static unsafe uint XXH32_finalize(uint h32, void* ptr, size_t len,
+								XXH_endianess endian, XXH_alignment align) {
+			byte* p = (byte*)ptr;
+
+			void PROCESS1() {
+				h32 += (*p++) * PRIME32_5;
+				h32 = XXH_rotl32(h32, 11) * PRIME32_1;
+			}
+
+			void PROCESS4() {
+				h32 += XXH_readLE32_align(p, endian, align) * PRIME32_3;
+				p += 4;
+				h32 = XXH_rotl32(h32, 17) * PRIME32_4;
+			}
+
+			switch (len & 15)  /* or switch(bEnd - p) */
+			{
+				case 12:
+					PROCESS4();
+					PROCESS4();
+					PROCESS4();
+					return XXH32_avalanche(h32);
+				case 8:
+					PROCESS4();
+					PROCESS4();
+					return XXH32_avalanche(h32);
+				case 4:
+					PROCESS4();
+					return XXH32_avalanche(h32);
+				case 13:
+					PROCESS4();
+					PROCESS4();
+					PROCESS4();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 9:
+					PROCESS4();
+					PROCESS4();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 5:
+					PROCESS4();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 14:
+					PROCESS4();
+					PROCESS4();
+					PROCESS4();
+					PROCESS1();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 10:
+					PROCESS4();
+					PROCESS4();
+					PROCESS1();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 6:
+					PROCESS4();
+					PROCESS1();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 15:
+					PROCESS4();
+					PROCESS4();
+					PROCESS4();
+					PROCESS1();
+					PROCESS1();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 11:
+					PROCESS4();
+					PROCESS4();
+					PROCESS1();
+					PROCESS1();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 7:
+					PROCESS4();
+					PROCESS1();
+					PROCESS1();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 3:
+					PROCESS1();
+					PROCESS1();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 2:
+					PROCESS1();
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 1:
+					PROCESS1();
+					return XXH32_avalanche(h32);
+				case 0:
+					return XXH32_avalanche(h32);
+			}
+			Debug.Fail("XXH32_finalize");
+			return h32;   /* reaching this point is deemed impossible */
+		}
+
+		private static uint XXH32_avalanche(uint h32) {
+			h32 ^= h32 >> 15;
+			h32 *= PRIME32_2;
+			h32 ^= h32 >> 13;
+			h32 *= PRIME32_3;
+			h32 ^= h32 >> 16;
+			return (h32);
+		}
+
+		internal static unsafe int LZ4_loadDict(LZ4_stream_u* LZ4_dict, char* dictionary, int dictSize) {
+
+			LZ4_stream_t_internal* dict = &LZ4_dict->internal_donotuse;
+			tableType_t tableType = tableType_t.byU32;
+			byte* p = (byte*)dictionary;
+			byte* dictEnd = p + dictSize;
+			byte* basePtr;
+
+			//DEBUGLOG(4, "LZ4_loadDict (%i bytes from %p into %p)", dictSize, dictionary, LZ4_dict);
+
+			/* It's necessary to reset the context,
+			 * and not just continue it with prepareTable()
+			 * to avoid any risk of generating overflowing matchIndex
+			 * when compressing using this dictionary */
+			LZ4_resetStream(LZ4_dict);
+
+			/* We always increment the offset by 64 KB, since, if the dict is longer,
+			 * we truncate it to the last 64k, and if it's shorter, we still want to
+			 * advance by a whole window length so we can provide the guarantee that
+			 * there are only valid offsets in the window, which allows an optimization
+			 * in LZ4_compress_fast_continue() where it uses noDictIssue even when the
+			 * dictionary isn't a full 64k. */
+			dict->currentOffset += 64 * (1 << 10);
+
+			if (dictSize < (int)UIntPtr.Size) {
+				return 0;
+			}
+
+			if ((dictEnd - p) > 64 * (1 << 10)) p = dictEnd - 64 * (1 << 10);
+			basePtr = dictEnd - dict->currentOffset;
+			dict->dictionary = p;
+			dict->dictSize = (uint)(dictEnd - p);
+			dict->tableType = (ushort)tableType;
+
+			while (p <= dictEnd - UIntPtr.Size) {
+				LZ4_putPosition(p, dict->hashTable, tableType, basePtr);
+				p += 3;
+			}
+
+			return (int)dict->dictSize;
+		}
+
+		internal static unsafe void LZ4_resetStream(LZ4_stream_u* LZ4_stream) {
+			//DEBUGLOG(5, "LZ4_resetStream (ctx:%p)", LZ4_stream);
+			Unsafe.InitBlock(LZ4_stream, 0, (uint)sizeof(LZ4_stream_u));
+		}
+
+		private static unsafe LZ4_stream_u* LZ4_initStream(void* buffer, size_t size) {
+			//DEBUGLOG(5, "LZ4_initStream");
+			if (buffer == null) { return null; }
+			if (size < sizeof(LZ4_stream_u)) { return null; }
+			Unsafe.InitBlock(buffer, 0, (uint)sizeof(LZ4_stream_u));
+			return (LZ4_stream_u*)buffer;
+		}
+
+		internal static unsafe int LZ4_setStreamDecode(LZ4_streamDecode_u* LZ4_streamDecode, byte* dictionary, int dictSize) {
+			LZ4_streamDecode_t_internal* lz4sd = &LZ4_streamDecode->internal_donotuse;
+			lz4sd->prefixSize = (size_t)dictSize;
+			lz4sd->prefixEnd = (byte*)dictionary + dictSize;
+			lz4sd->externalDict = null;
+			lz4sd->extDictSize = 0;
+			return 1;
+		}
+
+		internal static unsafe int LZ4_decompress_safe_continue(LZ4_streamDecode_u* LZ4_streamDecode, byte* source, byte* dest, int compressedSize, int maxOutputSize) {
 
 			LZ4_streamDecode_t_internal* lz4sd = &LZ4_streamDecode->internal_donotuse;
 			int result;
@@ -125,7 +566,7 @@ namespace IonKiwi.lz4 {
 		}
 
 		internal static unsafe int LZ4_compress_fast_continue(LZ4_stream_u* LZ4_stream,
-																 char* source, char* dest,
+																 byte* source, byte* dest,
 																int inputSize, int maxOutputSize,
 																int acceleration) {
 			tableType_t tableType = tableType_t.byU32;
@@ -203,7 +644,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		internal static unsafe int LZ4_compress_HC_continue(LZ4_streamHC_u* LZ4_streamHCPtr, char* src, char* dst, int srcSize, int dstCapacity) {
+		internal static unsafe int LZ4_compress_HC_continue(LZ4_streamHC_u* LZ4_streamHCPtr, byte* src, byte* dst, int srcSize, int dstCapacity) {
 			if (dstCapacity < LZ4_compressBound(srcSize))
 				return LZ4_compressHC_continue_generic(LZ4_streamHCPtr, src, dst, &srcSize, dstCapacity, limitedOutput_directive.limitedOutput);
 			else
@@ -480,33 +921,33 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		private static unsafe int LZ4_decompress_safe(char* source, char* dest, int compressedSize, int maxDecompressedSize) {
+		private static unsafe int LZ4_decompress_safe(byte* source, byte* dest, int compressedSize, int maxDecompressedSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize,
 																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
 																		(byte*)dest, null, 0);
 		}
 
-		private static unsafe int LZ4_decompress_safe_withPrefix64k(char* source, char* dest, int compressedSize, int maxOutputSize) {
+		private static unsafe int LZ4_decompress_safe_withPrefix64k(byte* source, byte* dest, int compressedSize, int maxOutputSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
 																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.withPrefix64k,
 																		(byte*)dest - 64 * (1 << 10), null, 0);
 		}
 
-		private static unsafe int LZ4_decompress_safe_withSmallPrefix(char* source, char* dest, int compressedSize, int maxOutputSize,
+		private static unsafe int LZ4_decompress_safe_withSmallPrefix(byte* source, byte* dest, int compressedSize, int maxOutputSize,
 																							 size_t prefixSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
 																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
 																		(byte*)dest - prefixSize, null, 0);
 		}
 
-		private static unsafe int LZ4_decompress_safe_doubleDict(char* source, char* dest, int compressedSize, int maxOutputSize,
+		private static unsafe int LZ4_decompress_safe_doubleDict(byte* source, byte* dest, int compressedSize, int maxOutputSize,
 																	 size_t prefixSize, void* dictStart, size_t dictSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
 																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.usingExtDict,
 																		(byte*)dest - prefixSize, (byte*)dictStart, dictSize);
 		}
 
-		private static unsafe int LZ4_decompress_safe_forceExtDict(char* source, char* dest,
+		private static unsafe int LZ4_decompress_safe_forceExtDict(byte* source, byte* dest,
 
 																		 int compressedSize, int maxOutputSize,
 
@@ -518,8 +959,8 @@ namespace IonKiwi.lz4 {
 
 		private static unsafe int
 		LZ4_decompress_generic(
-									char* src,
-								 char* dst,
+								 byte* src,
+								 byte* dst,
 								 int srcSize,
 								 int outputSize,         /* If endOnInput==endOnInputSize, this value is `dstCapacity` */
 								 endCondition_directive endOnInput,   /* endOnOutputSize, endOnInputSize */
@@ -805,22 +1246,22 @@ namespace IonKiwi.lz4 {
 
 				/* end of decoding */
 				if (endOnInput != endCondition_directive.endOnOutputSize) {
-					return (int)(((char*)op) - dst);     /* Nb of output bytes decoded */
+					return (int)(((byte*)op) - dst);     /* Nb of output bytes decoded */
 				}
 				else {
-					return (int)(((char*)ip) - src);   /* Nb of input bytes read */
+					return (int)(((byte*)ip) - src);   /* Nb of input bytes read */
 				}
 
 			/* Overflow error detected */
 			_output_error:
-				return (int)(-(((char*)ip) - src)) - 1;
+				return (int)(-(((byte*)ip) - src)) - 1;
 			}
 		}
 
 		private static unsafe int LZ4_compress_generic(
 										 LZ4_stream_t_internal* cctx,
-											char* source,
-										 char* dest,
+											byte* source,
+										 byte* dest,
 											int inputSize,
 										 int* inputConsumed, /* only written when outputDirective == fillOutput */
 											int maxOutputSize,
@@ -1234,16 +1675,16 @@ namespace IonKiwi.lz4 {
 
 			if (outputDirective == limitedOutput_directive.fillOutput) {
 
-				*inputConsumed = (int)(((char*)ip) - source);
+				*inputConsumed = (int)(((byte*)ip) - source);
 			}
 			//DEBUGLOG(5, "LZ4_compress_generic: compressed %i bytes into %i bytes", inputSize, (int)(((char*)op) - dest));
-			result = (int)(((char*)op) - dest);
+			result = (int)(((byte*)op) - dest);
 			Debug.Assert(result > 0);
 			return result;
 		}
 
 		private static unsafe int LZ4_compressHC_continue_generic(LZ4_streamHC_u* LZ4_streamHCPtr,
-																						char* src, char* dst,
+																						byte* src, byte* dst,
 																						int* srcSizePtr, int dstCapacity,
 																						limitedOutput_directive limit) {
 			LZ4HC_CCtx_internal* ctxPtr = &LZ4_streamHCPtr->internal_donotuse;
@@ -1321,7 +1762,7 @@ namespace IonKiwi.lz4 {
 			Unsafe.InitBlock(hc4->chainTable, 0xFF, lz4.LZ4HC_MAXD);
 		}
 
-		private static unsafe int LZ4_loadDictHC(LZ4_streamHC_u* LZ4_streamHCPtr,
+		internal static unsafe int LZ4_loadDictHC(LZ4_streamHC_u* LZ4_streamHCPtr,
 
 							char* dictionary, int dictSize) {
 
@@ -1426,8 +1867,8 @@ namespace IonKiwi.lz4 {
 
 		private static unsafe int LZ4HC_compress_generic(
 				LZ4HC_CCtx_internal* ctx,
-				char* src,
-				char* dst,
+				byte* src,
+				byte* dst,
 				int* srcSizePtr,
 				int dstCapacity,
 				int cLevel,
@@ -1443,8 +1884,8 @@ namespace IonKiwi.lz4 {
 
 		private static unsafe int LZ4HC_compress_generic_noDictCtx(
 				LZ4HC_CCtx_internal* ctx,
-				char* src,
-				char* dst,
+				byte* src,
+				byte* dst,
 				int* srcSizePtr,
 				int dstCapacity,
 				int cLevel,
@@ -1456,15 +1897,10 @@ namespace IonKiwi.lz4 {
 
 		private static unsafe int LZ4HC_compress_generic_dictCtx(
 				LZ4HC_CCtx_internal* ctx,
-
-				 char* src,
-
-				char* dst,
-
+				 byte* src,
+				byte* dst,
 				int* srcSizePtr,
-
 				int dstCapacity,
-
 				int cLevel,
 				limitedOutput_directive limit
 				) {
@@ -1487,8 +1923,8 @@ namespace IonKiwi.lz4 {
 
 		private static unsafe int LZ4HC_compress_generic_internal(
 		LZ4HC_CCtx_internal* ctx,
-		 char* src,
-		char* dst,
+		byte* src,
+		byte* dst,
 		int* srcSizePtr,
 		int dstCapacity,
 		int cLevel,
@@ -1528,8 +1964,8 @@ namespace IonKiwi.lz4 {
 
 		private static unsafe int LZ4HC_compress_hashChain(
 		LZ4HC_CCtx_internal* ctx,
-		 char* source,
-		char* dest,
+		byte* source,
+		byte* dest,
 		int* srcSizePtr,
 		int maxOutputSize,
 		uint maxNbAttempts,
@@ -1741,8 +2177,8 @@ namespace IonKiwi.lz4 {
 			}
 
 			/* End */
-			*srcSizePtr = (int)(((char*)ip) - source);
-			return (int)(((char*)op) - dest);
+			*srcSizePtr = (int)(((byte*)ip) - source);
+			return (int)(((byte*)op) - dest);
 
 		_dest_overflow:
 			if (limit == limitedOutput_directive.fillOutput) {
@@ -2180,8 +2616,8 @@ namespace IonKiwi.lz4 {
 		}
 
 		private static unsafe int LZ4HC_compress_optimal(LZ4HC_CCtx_internal* ctx,
-																		 char* source,
-																		char* dst,
+																		byte* source,
+																		byte* dst,
 																		int* srcSizePtr,
 																		int dstCapacity,
 																		int nbSearches,
@@ -2454,8 +2890,8 @@ namespace IonKiwi.lz4 {
 			}
 
 			/* End */
-			*srcSizePtr = (int)(((char*)ip) - source);
-			return (int)((char*)op - dst);
+			*srcSizePtr = (int)(((byte*)ip) - source);
+			return (int)((byte*)op - dst);
 
 		_dest_overflow:
 			if (limit == limitedOutput_directive.fillOutput) {
