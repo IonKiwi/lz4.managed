@@ -215,7 +215,7 @@ namespace IonKiwi.lz4 {
 				state->large_len |= ((len >= 16) ? 1u : 0) | ((state->total_len_32 >= 16) ? 1u : 0);
 
 				if (state->memsize + len < 16) {   /* fill in tmp buffer */
-					Unsafe.CopyBlock((byte*)(state->mem32) + state->memsize, input, len);
+					Unsafe.CopyBlock((byte*)(state->mem32) + state->memsize, input, (uint)len);
 					state->memsize += (uint)len;
 					return XXH_errorcode.XXH_OK;
 				}
@@ -254,7 +254,7 @@ namespace IonKiwi.lz4 {
 				}
 
 				if (p < bEnd) {
-					Unsafe.CopyBlock(state->mem32, p, (size_t)(bEnd - p));
+					Unsafe.CopyBlock(state->mem32, p, (uint)(bEnd - p));
 					state->memsize = (uint)(bEnd - p);
 				}
 			}
@@ -509,7 +509,7 @@ namespace IonKiwi.lz4 {
 		private static unsafe LZ4_stream_u* LZ4_initStream(void* buffer, size_t size) {
 			//DEBUGLOG(5, "LZ4_initStream");
 			if (buffer == null) { return null; }
-			if (size < sizeof(LZ4_stream_u)) { return null; }
+			if (size < (uint)sizeof(LZ4_stream_u)) { return null; }
 			Unsafe.InitBlock(buffer, 0, (uint)sizeof(LZ4_stream_u));
 			return (LZ4_stream_u*)buffer;
 		}
@@ -1175,7 +1175,7 @@ namespace IonKiwi.lz4 {
 							/* match stretches into both external dictionary and current block */
 							size_t copySize = (size_t)(lowPrefix - match);
 							size_t restSize = length - copySize;
-							Unsafe.CopyBlock(op, dictEnd - copySize, copySize);
+							Unsafe.CopyBlock(op, dictEnd - copySize, (uint)copySize);
 							op += copySize;
 							if (restSize > (size_t)(op - lowPrefix)) {  /* overlap copy */
 								byte* endOfMatch = op + restSize;
@@ -1183,7 +1183,7 @@ namespace IonKiwi.lz4 {
 								while (op < endOfMatch) *op++ = *copyFrom++;
 							}
 							else {
-								Unsafe.CopyBlock(op, lowPrefix, restSize);
+								Unsafe.CopyBlock(op, lowPrefix, (uint)restSize);
 								op += restSize;
 							}
 						}
@@ -1204,7 +1204,7 @@ namespace IonKiwi.lz4 {
 							while (op < copyEnd) { *op++ = *match++; }
 						}
 						else {
-							Unsafe.CopyBlock(op, match, mlen);
+							Unsafe.CopyBlock(op, match, (uint)mlen);
 						}
 						op = copyEnd;
 						if (op == oend) { break; }
@@ -1550,7 +1550,7 @@ namespace IonKiwi.lz4 {
 					if (matchCode >= ML_MASK) {
 
 						*token += (byte)ML_MASK;
-						matchCode -= ML_MASK;
+						matchCode -= (byte)ML_MASK;
 						LZ4_write32(op, 0xFFFFFFFF);
 						while (matchCode >= 4 * 255) {
 							op += 4;
@@ -1668,7 +1668,7 @@ namespace IonKiwi.lz4 {
 
 					*op++ = (byte)(lastRun << ML_BITS);
 				}
-				Unsafe.CopyBlock(op, anchor, lastRun);
+				Unsafe.CopyBlock(op, anchor, (uint)lastRun);
 				ip = anchor + lastRun;
 				op += lastRun;
 			}
@@ -1684,7 +1684,7 @@ namespace IonKiwi.lz4 {
 		}
 
 		private static unsafe int LZ4_compressHC_continue_generic(LZ4_streamHC_u* LZ4_streamHCPtr,
-																						byte* src, byte* dst,
+																						 byte* src, byte* dst,
 																						int* srcSizePtr, int dstCapacity,
 																						limitedOutput_directive limit) {
 			LZ4HC_CCtx_internal* ctxPtr = &LZ4_streamHCPtr->internal_donotuse;
@@ -1693,10 +1693,10 @@ namespace IonKiwi.lz4 {
 			Debug.Assert(ctxPtr != null);
 			/* auto-init if forgotten */
 			if (ctxPtr->basePtr == null) {
-				if (IntPtr.Size == 4)
-					LZ4HC_init_internal32(ctxPtr, (byte*)src);
-				else if (IntPtr.Size == 8)
+				if (IntPtr.Size == 8)
 					LZ4HC_init_internal64(ctxPtr, (byte*)src);
+				else if (IntPtr.Size == 4)
+					LZ4HC_init_internal32(ctxPtr, (byte*)src);
 				else
 					Debug.Fail("IntPtr.Size == " + IntPtr.Size);
 			}
@@ -1793,7 +1793,7 @@ namespace IonKiwi.lz4 {
 		private static unsafe LZ4_streamHC_u* LZ4_initStreamHC(void* buffer, size_t size) {
 			LZ4_streamHC_u* LZ4_streamHCPtr = (LZ4_streamHC_u*)buffer;
 			if (buffer == null) return null;
-			if (size < sizeof(LZ4_streamHC_u)) return null;
+			if (size < (uint)sizeof(LZ4_streamHC_u)) return null;
 			/* if compilation fails here, LZ4_STREAMHCSIZE must be increased */
 			//LZ4_STATIC_ASSERT(sizeof(LZ4HC_CCtx_internal) <= LZ4_STREAMHCSIZE);
 			//DEBUGLOG(4, "LZ4_initStreamHC(%p, %u)", LZ4_streamHCPtr, (unsigned)size);
@@ -1831,7 +1831,7 @@ namespace IonKiwi.lz4 {
 				uint h = LZ4HC_hashPtr(basePtr + idx);
 				size_t delta = idx - hashTable[h];
 				if (delta > LZ4_DISTANCE_MAX) delta = LZ4_DISTANCE_MAX;
-				chainTable[idx] = (ushort)delta;
+				chainTable[(ushort)(idx)] = (ushort)delta;
 				hashTable[h] = idx;
 				idx++;
 			}
@@ -1954,7 +1954,7 @@ namespace IonKiwi.lz4 {
 					result = LZ4HC_compress_optimal(ctx,
 															src, dst, srcSizePtr, dstCapacity,
 															(int)cParam.nbSearches, cParam.targetLength, limit,
-															cLevel == LZ4HC_CLEVEL_MAX ? 1 : 0,   /* ultra mode */
+															cLevel == LZ4HC_CLEVEL_MAX,   /* ultra mode */
 															dict, favor);
 				}
 				if (result <= 0) ctx->dirty = 1;
@@ -2021,7 +2021,7 @@ namespace IonKiwi.lz4 {
 
 				if (ml2 == ml) { /* No better match => encode ML1 */
 					optr = op;
-					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend) != 0) goto _dest_overflow;
+					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend)) goto _dest_overflow;
 					continue;
 				}
 
@@ -2041,8 +2041,8 @@ namespace IonKiwi.lz4 {
 
 			_Search3:
 				/* At this stage, we have :
-        *  ml2 > ml1, and
-        *  ip1+3 <= ip2 (usually < ip1+ml1) */
+				*  ml2 > ml1, and
+				*  ip1+3 <= ip2 (usually < ip1+ml1) */
 				if ((start2 - ip) < OPTIMAL_ML) {
 					int correction;
 					int new_ml = ml;
@@ -2071,10 +2071,10 @@ namespace IonKiwi.lz4 {
 					if (start2 < ip + ml) ml = (int)(start2 - ip);
 					/* Now, encode 2 sequences */
 					optr = op;
-					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend) != 0) goto _dest_overflow;
+					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend)) goto _dest_overflow;
 					ip = start2;
 					optr = op;
-					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml2, ref2, limit, oend) != 0) goto _dest_overflow;
+					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml2, ref2, limit, oend)) goto _dest_overflow;
 					continue;
 				}
 
@@ -2093,7 +2093,7 @@ namespace IonKiwi.lz4 {
 						}
 
 						optr = op;
-						if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend) != 0) goto _dest_overflow;
+						if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend)) goto _dest_overflow;
 						ip = start3;
 						refPtr = ref3;
 						ml = ml3;
@@ -2111,10 +2111,10 @@ namespace IonKiwi.lz4 {
 				}
 
 				/*
-        * OK, now we have 3 ascending matches;
-        * let's write the first one ML1.
-        * ip & ref are known; Now decide ml.
-        */
+				* OK, now we have 3 ascending matches;
+				* let's write the first one ML1.
+				* ip & ref are known; Now decide ml.
+				*/
 				if (start2 < ip + ml) {
 					if ((start2 - ip) < OPTIMAL_ML) {
 						int correction;
@@ -2132,7 +2132,7 @@ namespace IonKiwi.lz4 {
 					}
 				}
 				optr = op;
-				if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend) != 0) goto _dest_overflow;
+				if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend)) goto _dest_overflow;
 
 				/* ML2 becomes ML1 */
 				ip = start2; refPtr = ref2; ml = ml2;
@@ -2172,7 +2172,7 @@ namespace IonKiwi.lz4 {
 
 					*op++ = (byte)(lastRunSize << ML_BITS);
 				}
-				Unsafe.CopyBlock(op, anchor, lastRunSize);
+				Unsafe.CopyBlock(op, anchor, (uint)lastRunSize);
 				op += lastRunSize;
 			}
 
@@ -2272,12 +2272,10 @@ namespace IonKiwi.lz4 {
 					if (LZ4_read32(matchPtr) == pattern) {
 						byte* dictStart = dictBase + hc4->lowLimit;
 						int back = 0;
-
 						byte* vLimit = ip + (dictLimit - matchIndex);
 						if (vLimit > iHighLimit) vLimit = iHighLimit;
 						matchLength = (int)LZ4_count(ip + MINMATCH, matchPtr + MINMATCH, vLimit) + MINMATCH;
 						if ((ip + matchLength == vLimit) && (vLimit < iHighLimit))
-
 							matchLength += (int)LZ4_count(ip + matchLength, lowPrefixPtr, iHighLimit);
 						back = lookBackLength != 0 ? LZ4HC_countBack(ip, matchPtr, iLowLimit, dictStart) : 0;
 						matchLength -= back;
@@ -2301,7 +2299,7 @@ namespace IonKiwi.lz4 {
 						int accel = 1 << kTrigger;
 						int pos;
 						for (pos = 0; pos < end; pos += step) {
-							uint candidateDist = chainTable[matchIndex + (uint)pos];
+							uint candidateDist = chainTable[(ushort)(matchIndex + (uint)pos)];
 							step = (accel++ >> kTrigger);
 							if (candidateDist > distanceToNextMatch) {
 								distanceToNextMatch = candidateDist;
@@ -2318,7 +2316,7 @@ namespace IonKiwi.lz4 {
 				}
 
 				{
-					uint distNextMatch = chainTable[matchIndex];
+					uint distNextMatch = chainTable[(ushort)(matchIndex)];
 					if (patternAnalysis && distNextMatch == 1 && matchChainPos == 0) {
 						uint matchCandidateIdx = matchIndex - 1;
 						/* may be a repeated pattern */
@@ -2326,7 +2324,7 @@ namespace IonKiwi.lz4 {
 							if (((pattern & 0xFFFF) == (pattern >> 16))
 								& ((pattern & 0xFF) == (pattern >> 24))) {
 								repeat = repeat_state_e.rep_confirmed;
-								srcPatternLength = (IntPtr.Size == 8 ? LZ4HC_countPattern64(ip + 4, iHighLimit, pattern) : LZ4HC_countPattern32(ip + 4, iHighLimit, pattern)) + 4;
+								srcPatternLength = LZ4HC_countPattern(ip + 4, iHighLimit, pattern) + 4;
 							}
 							else {
 								repeat = repeat_state_e.rep_not;
@@ -2335,16 +2333,14 @@ namespace IonKiwi.lz4 {
 						if ((repeat == repeat_state_e.rep_confirmed) && (matchCandidateIdx >= lowestMatchIndex)
 							&& LZ4HC_protectDictEnd(dictLimit, matchCandidateIdx)) {
 							bool extDict = matchCandidateIdx < dictLimit;
-
 							byte* matchPtr = (extDict ? dictBase : basePtr) + matchCandidateIdx;
 							if (LZ4_read32(matchPtr) == pattern) {  /* good candidate */
 								byte* dictStart = dictBase + hc4->lowLimit;
-
 								byte* iLimit = extDict ? dictBase + dictLimit : iHighLimit;
-								size_t forwardPatternLength = (IntPtr.Size == 8 ? LZ4HC_countPattern64(matchPtr + 4, iLimit, pattern) : LZ4HC_countPattern32(matchPtr + 4, iLimit, pattern)) + 4;
+								size_t forwardPatternLength = LZ4HC_countPattern(matchPtr + 4, iLimit, pattern) + 4;
 								if (extDict && matchPtr + forwardPatternLength == iLimit) {
 									uint rotatedPattern = LZ4HC_rotatePattern(forwardPatternLength, pattern);
-									forwardPatternLength += (IntPtr.Size == 8 ? LZ4HC_countPattern64(lowPrefixPtr, iHighLimit, rotatedPattern) : LZ4HC_countPattern32(lowPrefixPtr, iHighLimit, rotatedPattern));
+									forwardPatternLength += LZ4HC_countPattern(lowPrefixPtr, iHighLimit, rotatedPattern);
 								}
 								{
 									byte* lowestMatchPtr = extDict ? dictStart : lowPrefixPtr;
@@ -2391,7 +2387,7 @@ namespace IonKiwi.lz4 {
 													*startpos = ip;
 												}
 												{
-													uint distToNextPattern = chainTable[matchIndex];
+													uint distToNextPattern = chainTable[(ushort)(matchIndex)];
 													if (distToNextPattern > matchIndex) break;  /* avoid overflow */
 													matchIndex -= distToNextPattern;
 												}
@@ -2406,7 +2402,7 @@ namespace IonKiwi.lz4 {
 				}   /* PA optimization */
 
 				/* follow current chain */
-				matchIndex -= chainTable[matchIndex + matchChainPos];
+				matchIndex -= chainTable[(ushort)(matchIndex + matchChainPos)];
 
 			}  /* while ((matchIndex>=lowestMatchIndex) && (nbAttempts)) */
 
@@ -2423,7 +2419,6 @@ namespace IonKiwi.lz4 {
 					if (LZ4_read32(matchPtr) == pattern) {
 						int mlt;
 						int back = 0;
-
 						byte* vLimit = ip + (dictEndOffset - dictMatchIndex);
 						if (vLimit > iHighLimit) vLimit = iHighLimit;
 						mlt = (int)LZ4_count(ip + MINMATCH, matchPtr + MINMATCH, vLimit) + MINMATCH;
@@ -2439,7 +2434,7 @@ namespace IonKiwi.lz4 {
 					}
 
 					{
-						uint nextOffset = dictCtx->chainTable[dictMatchIndex];
+						uint nextOffset = dictCtx->chainTable[(ushort)(dictMatchIndex)];
 						dictMatchIndex -= nextOffset;
 						matchIndex -= nextOffset;
 					}
@@ -2473,7 +2468,7 @@ namespace IonKiwi.lz4 {
 			return LZ4HC_rotl32(pattern, (int)bitsToRotate);
 		}
 
-		private static unsafe uint LZ4HC_rotl32(uint x, int r) {
+		private static uint LZ4HC_rotl32(uint x, int r) {
 			return ((x << r) | (x >> (32 - r)));
 		}
 
@@ -2494,34 +2489,68 @@ namespace IonKiwi.lz4 {
 			return (uint)(iStart - ip);
 		}
 
-		private static unsafe uint LZ4HC_countPattern32(byte* ip, byte* iEnd, uint pattern32) {
+		private static unsafe uint LZ4HC_countPattern(byte* ip, byte* iEnd, uint pattern32) {
 
-			byte* iStart = ip;
-			uint pattern = pattern32;
+			if (IntPtr.Size == 8) {
+				byte* iStart = ip;
+				ulong pattern = (ulong)pattern32 + (((ulong)pattern32) << 32);
 
-			while ((ip < iEnd - (4 - 1))) {
-				uint diff = LZ4_read_ARCH32(ip) ^ pattern;
-				if (diff == 0) { ip += 4; continue; }
-				ip += LZ4_NbCommonBytes32(diff);
+				while ((ip < iEnd - (8 - 1))) {
+					ulong diff = LZ4_read_ARCH64(ip) ^ pattern;
+					if (diff == 0) { ip += 8; continue; }
+					ip += LZ4_NbCommonBytes64(diff);
+					return (uint)(ip - iStart);
+				}
+
+				if (BitConverter.IsLittleEndian) {
+					ulong patternByte = pattern;
+					while ((ip < iEnd) && (*ip == (byte)patternByte)) {
+						ip++; patternByte >>= 8;
+					}
+				}
+				else {  /* big endian */
+					int bitOffset = (8 * 8) - 8;
+					while (ip < iEnd) {
+						byte byteValue = (byte)(pattern >> bitOffset);
+						if (*ip != byteValue) break;
+						ip++; bitOffset -= 8;
+					}
+				}
+
 				return (uint)(ip - iStart);
 			}
+			else if (IntPtr.Size == 4) {
+				byte* iStart = ip;
+				uint pattern = pattern32;
 
-			if (BitConverter.IsLittleEndian) {
-				uint patternByte = pattern;
-				while ((ip < iEnd) && (*ip == (byte)patternByte)) {
-					ip++; patternByte >>= 8;
+				while ((ip < iEnd - (4 - 1))) {
+					uint diff = LZ4_read_ARCH32(ip) ^ pattern;
+					if (diff == 0) { ip += 4; continue; }
+					ip += LZ4_NbCommonBytes32(diff);
+					return (uint)(ip - iStart);
 				}
-			}
-			else {  /* big endian */
-				uint bitOffset = (4 * 8) - 8;
-				while (ip < iEnd) {
-					byte byteValue = (byte)(pattern >> (int)bitOffset);
-					if (*ip != byteValue) break;
-					ip++; bitOffset -= 8;
-				}
-			}
 
-			return (uint)(ip - iStart);
+				if (BitConverter.IsLittleEndian) {
+					uint patternByte = pattern;
+					while ((ip < iEnd) && (*ip == (byte)patternByte)) {
+						ip++; patternByte >>= 8;
+					}
+				}
+				else {  /* big endian */
+					int bitOffset = (4 * 8) - 8;
+					while (ip < iEnd) {
+						byte byteValue = (byte)(pattern >> bitOffset);
+						if (*ip != byteValue) break;
+						ip++; bitOffset -= 8;
+					}
+				}
+
+				return (uint)(ip - iStart);
+			}
+			else {
+				Debug.Fail("IntPtr.Size == " + IntPtr.Size);
+				return 0;
+			}
 		}
 
 		private static unsafe uint LZ4HC_countPattern64(byte* ip, byte* iEnd, uint pattern32) {
@@ -2554,7 +2583,7 @@ namespace IonKiwi.lz4 {
 			return (uint)(ip - iStart);
 		}
 
-		private static unsafe int LZ4HC_encodeSequence(
+		private static unsafe bool LZ4HC_encodeSequence(
 		 byte** ip,
 		byte** op,
 		 byte** anchor,
@@ -2568,7 +2597,7 @@ namespace IonKiwi.lz4 {
 
 			/* Encode Literal length */
 			length = (size_t)(*ip - *anchor);
-			if ((limit != 0) && ((*op + (length / 255) + length + (2 + 1 + LASTLITERALS)) > oend)) return 1;   /* Check output limit */
+			if ((limit != 0) && ((*op + (length / 255) + length + (2 + 1 + LASTLITERALS)) > oend)) return true;   /* Check output limit */
 			if (length >= RUN_MASK) {
 				size_t len = length - RUN_MASK;
 				*token = ((byte)RUN_MASK << ML_BITS);
@@ -2592,7 +2621,7 @@ namespace IonKiwi.lz4 {
 			/* Encode MatchLength */
 			Debug.Assert(matchLength >= MINMATCH);
 			length = (size_t)matchLength - MINMATCH;
-			if ((limit != 0) && (*op + (length / 255) + (1 + LASTLITERALS) > oend)) return 1;   /* Check output limit */
+			if ((limit != 0) && (*op + (length / 255) + (1 + LASTLITERALS) > oend)) return true;   /* Check output limit */
 			if (length >= ML_MASK) {
 
 				*token += (byte)ML_MASK;
@@ -2612,7 +2641,7 @@ namespace IonKiwi.lz4 {
 
 			*anchor = *ip;
 
-			return 0;
+			return false;
 		}
 
 		private static unsafe int LZ4HC_compress_optimal(LZ4HC_CCtx_internal* ctx,
@@ -2623,7 +2652,7 @@ namespace IonKiwi.lz4 {
 																		int nbSearches,
 																		size_t sufficient_len,
 																		 limitedOutput_directive limit,
-																		int fullUpdate,
+																		bool fullUpdate,
 																		 dictCtx_directive dict,
 																		 HCfavor_e favorDecSpeed) {
 			LZ4HC_optimal_t[] opt = new LZ4HC_optimal_t[LZ4_OPT_NUM + TRAILING_LITERALS];   /* ~64 KB, which is a bit large for stack... */
@@ -2658,7 +2687,7 @@ namespace IonKiwi.lz4 {
 					int firstML = firstMatch.len;
 					byte* matchPos = ip - firstMatch.off;
 					opSaved = op;
-					if (LZ4HC_encodeSequence(&ip, &op, &anchor, firstML, matchPos, limit, oend) != 0)   /* updates ip, op and anchor */
+					if (LZ4HC_encodeSequence(&ip, &op, &anchor, firstML, matchPos, limit, oend))   /* updates ip, op and anchor */
 						goto _dest_overflow;
 					continue;
 				}
@@ -2713,7 +2742,7 @@ namespace IonKiwi.lz4 {
 					if (curPtr > mflimit) break;
 					//DEBUGLOG(7, "rPos:%u[%u] vs [%u]%u",
 					//				cur, opt[cur].price, opt[cur + 1].price, cur + 1);
-					if (fullUpdate != 0) {
+					if (fullUpdate) {
 						/* not useful to search here if next position has same (or lower) cost */
 						if ((opt[cur + 1].price <= opt[cur].price)
 							/* in some cases, next position has same cost, but cost rises sharply after, so a small match would still be beneficial */
@@ -2726,7 +2755,7 @@ namespace IonKiwi.lz4 {
 					}
 
 					//DEBUGLOG(7, "search at rPos:%u", cur);
-					if (fullUpdate != 0)
+					if (fullUpdate)
 						newMatch = LZ4HC_FindLongerMatch(ctx, curPtr, matchlimit, MINMATCH - 1, nbSearches, dict, favorDecSpeed);
 					else
 						/* only test matches of minimum length; slightly faster, but misses a few bytes */
@@ -2851,7 +2880,7 @@ namespace IonKiwi.lz4 {
 						Debug.Assert(ml >= MINMATCH);
 						Debug.Assert((offset >= 1) && (offset <= LZ4_DISTANCE_MAX));
 						opSaved = op;
-						if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, ip - offset, limit, oend) != 0)   /* updates ip, op and anchor */
+						if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, ip - offset, limit, oend))   /* updates ip, op and anchor */
 							goto _dest_overflow;
 					}
 				}
@@ -2885,7 +2914,7 @@ namespace IonKiwi.lz4 {
 
 					*op++ = (byte)(lastRunSize << ML_BITS);
 				}
-				Unsafe.CopyBlock(op, anchor, lastRunSize);
+				Unsafe.CopyBlock(op, anchor, (uint)lastRunSize);
 				op += lastRunSize;
 			}
 
