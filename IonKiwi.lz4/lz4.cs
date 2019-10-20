@@ -1539,7 +1539,7 @@ namespace IonKiwi.lz4 {
 		) {
 
 			int inputSize = *srcSizePtr;
-			int patternAnalysis = (maxNbAttempts > 128) ? 1 : 0;   /* levels 9+ */
+			bool patternAnalysis = (maxNbAttempts > 128);   /* levels 9+ */
 
 			byte* ip = (byte*)source;
 			byte* anchor = ip;
@@ -1577,7 +1577,7 @@ namespace IonKiwi.lz4 {
 				if (ip + ml <= mflimit) {
 					ml2 = LZ4HC_InsertAndGetWiderMatch(ctx,
 													ip + ml - 2, ip + 0, matchlimit, ml, &ref2, &start2,
-													(int)maxNbAttempts, patternAnalysis, 0, dict, HCfavor_e.favorCompressionRatio);
+													(int)maxNbAttempts, patternAnalysis, false, dict, HCfavor_e.favorCompressionRatio);
 				}
 				else {
 					ml2 = ml;
@@ -1624,7 +1624,7 @@ namespace IonKiwi.lz4 {
 				if (start2 + ml2 <= mflimit) {
 					ml3 = LZ4HC_InsertAndGetWiderMatch(ctx,
 													start2 + ml2 - 3, start2, matchlimit, ml2, &ref3, &start3,
-													(int)maxNbAttempts, patternAnalysis, 0, dict, HCfavor_e.favorCompressionRatio);
+													(int)maxNbAttempts, patternAnalysis, false, dict, HCfavor_e.favorCompressionRatio);
 				}
 				else {
 					ml3 = ml2;
@@ -1756,14 +1756,14 @@ namespace IonKiwi.lz4 {
 																	byte* ip, byte* iLimit,
 																	byte** matchpos,
 																	int maxNbAttempts,
-																	int patternAnalysis,
+																	bool patternAnalysis,
 																	dictCtx_directive dict) {
 
 			byte* uselessPtr = ip;
 			/* note : LZ4HC_InsertAndGetWiderMatch() is able to modify the starting position of a match (*startpos),
 			 * but this won't be the case here, as we define iLowLimit==ip,
 			 * so LZ4HC_InsertAndGetWiderMatch() won't be allowed to search past ip */
-			return LZ4HC_InsertAndGetWiderMatch(hc4, ip, ip, iLimit, MINMATCH - 1, matchpos, &uselessPtr, maxNbAttempts, patternAnalysis, 0 /*chainSwap*/, dict, HCfavor_e.favorCompressionRatio);
+			return LZ4HC_InsertAndGetWiderMatch(hc4, ip, ip, iLimit, MINMATCH - 1, matchpos, &uselessPtr, maxNbAttempts, patternAnalysis, false /*chainSwap*/, dict, HCfavor_e.favorCompressionRatio);
 		}
 
 		private static unsafe int LZ4HC_InsertAndGetWiderMatch(
@@ -1775,8 +1775,8 @@ namespace IonKiwi.lz4 {
 		 byte** matchpos,
 		 byte** startpos,
 		 int maxNbAttempts,
-		 int patternAnalysis,
-		 int chainSwap,
+		 bool patternAnalysis,
+		 bool chainSwap,
 		 dictCtx_directive dict,
 		 HCfavor_e favorDecSpeed) {
 
@@ -1855,7 +1855,7 @@ namespace IonKiwi.lz4 {
 					}
 				}
 
-				if (chainSwap != 0 && matchLength == longest) {    /* better match => select a better chain */
+				if (chainSwap && matchLength == longest) {    /* better match => select a better chain */
 					Debug.Assert(lookBackLength == 0);   /* search forward only */
 					if (matchIndex + (uint)longest <= ipIndex) {
 						int kTrigger = 4;
@@ -1883,7 +1883,7 @@ namespace IonKiwi.lz4 {
 
 				{
 					uint distNextMatch = chainTable[matchIndex];
-					if (patternAnalysis != 0 && distNextMatch == 1 && matchChainPos == 0) {
+					if (patternAnalysis && distNextMatch == 1 && matchChainPos == 0) {
 						uint matchCandidateIdx = matchIndex - 1;
 						/* may be a repeated pattern */
 						if (repeat == repeat_state_e.rep_untested) {
@@ -1897,24 +1897,24 @@ namespace IonKiwi.lz4 {
 							}
 						}
 						if ((repeat == repeat_state_e.rep_confirmed) && (matchCandidateIdx >= lowestMatchIndex)
-							&& LZ4HC_protectDictEnd(dictLimit, matchCandidateIdx) != 0) {
-							int extDict = matchCandidateIdx < dictLimit ? 1 : 0;
+							&& LZ4HC_protectDictEnd(dictLimit, matchCandidateIdx)) {
+							bool extDict = matchCandidateIdx < dictLimit;
 
-							byte* matchPtr = (extDict != 0 ? dictBase : basePtr) + matchCandidateIdx;
+							byte* matchPtr = (extDict ? dictBase : basePtr) + matchCandidateIdx;
 							if (LZ4_read32(matchPtr) == pattern) {  /* good candidate */
 								byte* dictStart = dictBase + hc4->lowLimit;
 
-								byte* iLimit = extDict != 0 ? dictBase + dictLimit : iHighLimit;
+								byte* iLimit = extDict ? dictBase + dictLimit : iHighLimit;
 								size_t forwardPatternLength = (IntPtr.Size == 8 ? LZ4HC_countPattern64(matchPtr + 4, iLimit, pattern) : LZ4HC_countPattern32(matchPtr + 4, iLimit, pattern)) + 4;
-								if (extDict != 0 && matchPtr + forwardPatternLength == iLimit) {
+								if (extDict && matchPtr + forwardPatternLength == iLimit) {
 									uint rotatedPattern = LZ4HC_rotatePattern(forwardPatternLength, pattern);
 									forwardPatternLength += (IntPtr.Size == 8 ? LZ4HC_countPattern64(lowPrefixPtr, iHighLimit, rotatedPattern) : LZ4HC_countPattern32(lowPrefixPtr, iHighLimit, rotatedPattern));
 								}
 								{
-									byte* lowestMatchPtr = extDict != 0 ? dictStart : lowPrefixPtr;
+									byte* lowestMatchPtr = extDict ? dictStart : lowPrefixPtr;
 									size_t backLength = LZ4HC_reverseCountPattern(matchPtr, lowestMatchPtr, pattern);
 									size_t currentSegmentLength;
-									if (extDict == 0 && matchPtr - backLength == lowPrefixPtr && hc4->lowLimit < dictLimit) {
+									if (!extDict && matchPtr - backLength == lowPrefixPtr && hc4->lowLimit < dictLimit) {
 										uint rotatedPattern = LZ4HC_rotatePattern((uint)(-(int)backLength), pattern);
 										backLength += LZ4HC_reverseCountPattern(dictBase + dictLimit, dictStart, rotatedPattern);
 									}
@@ -1926,18 +1926,18 @@ namespace IonKiwi.lz4 {
 									if ((currentSegmentLength >= srcPatternLength)   /* current pattern segment large enough to contain full srcPatternLength */
 										&& (forwardPatternLength <= srcPatternLength)) { /* haven't reached this position yet */
 										uint newMatchIndex = matchCandidateIdx + (uint)forwardPatternLength - (uint)srcPatternLength;  /* best position, full pattern, might be followed by more match */
-										if (LZ4HC_protectDictEnd(dictLimit, newMatchIndex) != 0)
+										if (LZ4HC_protectDictEnd(dictLimit, newMatchIndex))
 											matchIndex = newMatchIndex;
 										else {
 											/* Can only happen if started in the prefix */
-											Debug.Assert(newMatchIndex >= dictLimit - 3 && newMatchIndex < dictLimit && extDict == 0);
+											Debug.Assert(newMatchIndex >= dictLimit - 3 && newMatchIndex < dictLimit && !extDict);
 											matchIndex = dictLimit;
 										}
 									}
 									else {
 										uint newMatchIndex = matchCandidateIdx - (uint)backLength;   /* farthest position in current segment, will find a match of length currentSegmentLength + maybe some back */
-										if (LZ4HC_protectDictEnd(dictLimit, newMatchIndex) == 0) {
-											Debug.Assert(newMatchIndex >= dictLimit - 3 && newMatchIndex < dictLimit && extDict == 0);
+										if (!LZ4HC_protectDictEnd(dictLimit, newMatchIndex)) {
+											Debug.Assert(newMatchIndex >= dictLimit - 3 && newMatchIndex < dictLimit && !extDict);
 											matchIndex = dictLimit;
 										}
 										else {
@@ -2026,8 +2026,8 @@ namespace IonKiwi.lz4 {
 			return back;
 		}
 
-		private static unsafe int LZ4HC_protectDictEnd(uint dictLimit, uint matchIndex) {
-			return ((uint)((dictLimit - 1) - matchIndex) >= 3 ? 1 : 0);
+		private static unsafe bool LZ4HC_protectDictEnd(uint dictLimit, uint matchIndex) {
+			return (uint)((dictLimit - 1) - matchIndex) >= 3;
 		}
 
 		private static unsafe uint LZ4HC_rotatePattern(size_t rotate, uint pattern) {
@@ -2498,7 +2498,7 @@ namespace IonKiwi.lz4 {
 			/* note : LZ4HC_InsertAndGetWiderMatch() is able to modify the starting position of a match (*startpos),
 			 * but this won't be the case here, as we define iLowLimit==ip,
 			 * so LZ4HC_InsertAndGetWiderMatch() won't be allowed to search past ip */
-			int matchLength = LZ4HC_InsertAndGetWiderMatch(ctx, ip, ip, iHighLimit, minLen, &matchPtr, &ip, nbSearches, 1 /*patternAnalysis*/, 1 /*chainSwap*/, dict, favorDecSpeed);
+			int matchLength = LZ4HC_InsertAndGetWiderMatch(ctx, ip, ip, iHighLimit, minLen, &matchPtr, &ip, nbSearches, true /*patternAnalysis*/, true /*chainSwap*/, dict, favorDecSpeed);
 			if (matchLength <= minLen) return match;
 			if (favorDecSpeed != 0) {
 				if ((matchLength > 18) & (matchLength <= 36)) matchLength = 18;   /* favor shortcut */
