@@ -41,7 +41,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 namespace IonKiwi.lz4 {
-	public sealed unsafe class LZ4Stream : Stream {
+	public sealed class LZ4Stream : Stream {
 
 		private Stream _innerStream;
 
@@ -71,8 +71,7 @@ namespace IonKiwi.lz4 {
 		private byte[] _outputBufferRef = null;
 		private GCHandle _inputBufferHandle;
 		private GCHandle _outputBufferHandle;
-		private byte* _inputBufferPtr;
-		private byte* _outputBufferPtr;
+
 		private int _outputBufferSize = 0;
 		private int _outputBufferOffset = 0;
 		private int _outputBufferBlockSize = 0;
@@ -81,14 +80,21 @@ namespace IonKiwi.lz4 {
 		private int _ringbufferOffset = 0;
 		private long _blockCount = 0;
 
-		private LZ4_stream_u* _lz4Stream = null;
-		private LZ4_streamHC_u* _lz4HCStream = null;
-		private LZ4_streamDecode_u* _lz4DecodeStream = null;
-		private XXH32_state_s* _contentHashState = null;
 		private IDisposable _lz4StreamDispose = null;
 		private IDisposable _lz4HCStreamDispose = null;
 		private IDisposable _lz4DecodeStreamDispose = null;
 		private IDisposable _contentHashStateDispose = null;
+
+		private UnsafeData _unsafeData = new UnsafeData();
+
+		private sealed unsafe class UnsafeData {
+			public byte* _inputBufferPtr;
+			public byte* _outputBufferPtr;
+			public LZ4_stream_u* _lz4Stream = null;
+			public LZ4_streamHC_u* _lz4HCStream = null;
+			public LZ4_streamDecode_u* _lz4DecodeStream = null;
+			public XXH32_state_s* _contentHashState = null;
+		}
 
 		public event EventHandler<LZ4UserDataFrameEventArgs> UserDataFrameRead;
 
@@ -142,7 +148,7 @@ namespace IonKiwi.lz4 {
 			get => _frameCount;
 		}
 
-		protected override void Dispose(bool disposing) {
+		protected override unsafe void Dispose(bool disposing) {
 			try {
 				if (disposing) {
 					if (_compressionMode == CompressionMode.Compress && _streamMode == LZ4StreamMode.Write) { WriteEndFrameInternal(); }
@@ -154,8 +160,8 @@ namespace IonKiwi.lz4 {
 				base.Dispose(disposing);
 			}
 			finally {
-				if (_inputBufferHandle.IsAllocated) { _inputBufferHandle.Free(); _inputBufferHandle = default; _inputBufferPtr = null; }
-				if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _outputBufferPtr = null; }
+				if (_inputBufferHandle.IsAllocated) { _inputBufferHandle.Free(); _inputBufferHandle = default; _unsafeData._inputBufferPtr = null; }
+				if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _unsafeData._outputBufferPtr = null; }
 
 				if (_headerBuffer != null) { ArrayPool<byte>.Shared.Return(_headerBuffer); _headerBuffer = null; }
 				if (_inputBufferRef != null) { ArrayPool<byte>.Shared.Return(_inputBufferRef); _inputBufferRef = null; }
@@ -172,10 +178,10 @@ namespace IonKiwi.lz4 {
 			_headerBuffer = ArrayPool<byte>.Shared.Rent(23);
 			if (_compressionMode == CompressionMode.Compress) {
 				if (!_highCompression) {
-					_lz4Stream = lz4.LZ4_createStream(out _lz4StreamDispose);
+					_unsafeData._lz4Stream = lz4.LZ4_createStream(out _lz4StreamDispose);
 				}
 				else {
-					_lz4HCStream = lz4.LZ4_createStreamHC(out _lz4HCStreamDispose);
+					_unsafeData._lz4HCStream = lz4.LZ4_createStreamHC(out _lz4HCStreamDispose);
 				}
 
 				switch (_blockSize) {
@@ -186,8 +192,8 @@ namespace IonKiwi.lz4 {
 						_outputBufferRef = ArrayPool<byte>.Shared.Rent(_outputBufferSize);
 						_inputBufferHandle = GCHandle.Alloc(_inputBufferRef, GCHandleType.Pinned);
 						_outputBufferHandle = GCHandle.Alloc(_outputBufferRef, GCHandleType.Pinned);
-						_inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
-						_outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
 						break;
 					case LZ4FrameBlockSize.Max256KB:
 						_inputBufferSize = 256 * (1 << 10);
@@ -196,8 +202,8 @@ namespace IonKiwi.lz4 {
 						_outputBufferRef = ArrayPool<byte>.Shared.Rent(_outputBufferSize);
 						_inputBufferHandle = GCHandle.Alloc(_inputBufferRef, GCHandleType.Pinned);
 						_outputBufferHandle = GCHandle.Alloc(_outputBufferRef, GCHandleType.Pinned);
-						_inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
-						_outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
 						break;
 					case LZ4FrameBlockSize.Max1MB:
 						_inputBufferSize = 1 * (1 << 20);
@@ -206,8 +212,8 @@ namespace IonKiwi.lz4 {
 						_outputBufferRef = ArrayPool<byte>.Shared.Rent(_outputBufferSize);
 						_inputBufferHandle = GCHandle.Alloc(_inputBufferRef, GCHandleType.Pinned);
 						_outputBufferHandle = GCHandle.Alloc(_outputBufferRef, GCHandleType.Pinned);
-						_inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
-						_outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
 						break;
 					case LZ4FrameBlockSize.Max4MB:
 						_inputBufferSize = 4 * (1 << 20);
@@ -216,22 +222,22 @@ namespace IonKiwi.lz4 {
 						_outputBufferRef = ArrayPool<byte>.Shared.Rent(_outputBufferSize);
 						_inputBufferHandle = GCHandle.Alloc(_inputBufferRef, GCHandleType.Pinned);
 						_outputBufferHandle = GCHandle.Alloc(_outputBufferRef, GCHandleType.Pinned);
-						_inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
-						_outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
 						break;
 					default:
 						throw new NotSupportedException(_blockSize.ToString());
 				}
 
 				if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
-					_contentHashState = lz4.XXH32_createState(out _contentHashStateDispose);
-					lz4.XXH32_reset(_contentHashState, 0);
+					_unsafeData._contentHashState = lz4.XXH32_createState(out _contentHashStateDispose);
+					lz4.XXH32_reset(_unsafeData._contentHashState, 0);
 				}
 			}
 			else {
-				_lz4DecodeStream = lz4.LZ4_createStreamDecode(out _lz4DecodeStreamDispose);
-				_contentHashState = lz4.XXH32_createState(out _contentHashStateDispose);
-				lz4.XXH32_reset(_contentHashState, 0);
+				_unsafeData._lz4DecodeStream = lz4.LZ4_createStreamDecode(out _lz4DecodeStreamDispose);
+				_unsafeData._contentHashState = lz4.XXH32_createState(out _contentHashStateDispose);
+				lz4.XXH32_reset(_unsafeData._contentHashState, 0);
 			}
 		}
 
@@ -279,7 +285,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		private void WriteEndFrameInternal() {
+		private unsafe void WriteEndFrameInternal() {
 			if (!_hasWrittenInitialStartFrame) {
 				//WriteEmptyFrame();
 				return;
@@ -305,8 +311,8 @@ namespace IonKiwi.lz4 {
 			WriteHeaderData(b, 0, b.Length);
 
 			if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
-				uint xxh = lz4.XXH32_digest(_contentHashState);
-				lz4.XXH32_reset(_contentHashState, 0); // reset for next frame
+				uint xxh = lz4.XXH32_digest(_unsafeData._contentHashState);
+				lz4.XXH32_reset(_unsafeData._contentHashState, 0); // reset for next frame
 
 				b[0] = (byte)(xxh & 0xFF);
 				b[1] = (byte)((xxh >> 8) & 0xFF);
@@ -317,16 +323,16 @@ namespace IonKiwi.lz4 {
 
 			// reset the stream
 			if (!_highCompression) {
-				lz4.LZ4_loadDict(_lz4Stream, null, 0);
+				lz4.LZ4_loadDict(_unsafeData._lz4Stream, null, 0);
 			}
 			else {
-				lz4.LZ4_loadDictHC(_lz4HCStream, null, 0);
+				lz4.LZ4_loadDictHC(_unsafeData._lz4HCStream, null, 0);
 			}
 
 			_hasWrittenStartFrame = false;
 		}
 
-		private void WriteStartFrame() {
+		private unsafe void WriteStartFrame() {
 			_hasWrittenStartFrame = true;
 			_hasWrittenInitialStartFrame = true;
 			_frameCount++;
@@ -402,7 +408,7 @@ namespace IonKiwi.lz4 {
 			WriteHeaderData(checksumByte, 0, 1);
 		}
 
-		private void WriteEmptyFrame() {
+		private unsafe void WriteEmptyFrame() {
 			if (_compressionMode != CompressionMode.Compress) { throw new NotSupportedException("Only supported in compress mode"); }
 
 			if (_hasWrittenStartFrame || _hasWrittenInitialStartFrame) {
@@ -502,7 +508,7 @@ namespace IonKiwi.lz4 {
 			_frameCount++;
 		}
 
-		private void FlushCurrentBlock(bool suppressEndFrame) {
+		private unsafe void FlushCurrentBlock(bool suppressEndFrame) {
 
 			//char* inputBufferPtr = &_inputBufferPtr[_ringbufferOffset];
 			//char* outputBufferPtr = &_outputBufferPtr[0];
@@ -514,10 +520,10 @@ namespace IonKiwi.lz4 {
 			if (_blockMode == LZ4FrameBlockMode.Independent || _blockCount == 0) {
 				// reset the stream { create independently compressed blocks }
 				if (!_highCompression) {
-					lz4.LZ4_loadDict(_lz4Stream, null, 0);
+					lz4.LZ4_loadDict(_unsafeData._lz4Stream, null, 0);
 				}
 				else {
-					lz4.LZ4_loadDictHC(_lz4HCStream, null, 0);
+					lz4.LZ4_loadDictHC(_unsafeData._lz4HCStream, null, 0);
 				}
 			}
 
@@ -525,7 +531,7 @@ namespace IonKiwi.lz4 {
 			bool isCompressed;
 
 			if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
-				XXH_errorcode status = lz4.XXH32_update(_contentHashState, &_inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
+				XXH_errorcode status = lz4.XXH32_update(_unsafeData._contentHashState, &_unsafeData._inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
 				if (status != XXH_errorcode.XXH_OK) {
 					throw new Exception("Failed to update content checksum");
 				}
@@ -533,10 +539,10 @@ namespace IonKiwi.lz4 {
 
 			int outputBytes;
 			if (!_highCompression) {
-				outputBytes = lz4.LZ4_compress_fast_continue(_lz4Stream, &_inputBufferPtr[_ringbufferOffset], &_outputBufferPtr[0], _inputBufferOffset, _outputBufferSize, 1);
+				outputBytes = lz4.LZ4_compress_fast_continue(_unsafeData._lz4Stream, &_unsafeData._inputBufferPtr[_ringbufferOffset], &_unsafeData._outputBufferPtr[0], _inputBufferOffset, _outputBufferSize, 1);
 			}
 			else {
-				outputBytes = lz4.LZ4_compress_HC_continue(_lz4HCStream, &_inputBufferPtr[_ringbufferOffset], &_outputBufferPtr[0], _inputBufferOffset, _outputBufferSize);
+				outputBytes = lz4.LZ4_compress_HC_continue(_unsafeData._lz4HCStream, &_unsafeData._inputBufferPtr[_ringbufferOffset], &_unsafeData._outputBufferPtr[0], _inputBufferOffset, _outputBufferSize);
 			}
 
 			if (outputBytes == 0) {
@@ -550,7 +556,7 @@ namespace IonKiwi.lz4 {
 				//	LZ4_loadDictHC(_lz4HCStream, null, 0);
 				//}
 
-				Unsafe.CopyBlock(_outputBufferPtr, &_inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
+				Unsafe.CopyBlock(_unsafeData._outputBufferPtr, &_unsafeData._inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
@@ -565,7 +571,7 @@ namespace IonKiwi.lz4 {
 				//	LZ4_loadDictHC(_lz4HCStream, null, 0);
 				//}
 
-				Unsafe.CopyBlock(_outputBufferPtr, &_inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
+				Unsafe.CopyBlock(_unsafeData._outputBufferPtr, &_unsafeData._inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
@@ -591,7 +597,7 @@ namespace IonKiwi.lz4 {
 			_innerStream.Write(_outputBufferRef, 0, targetSize);
 
 			if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
-				uint xxh = lz4.XXH32(&_outputBufferPtr[0], (uint)targetSize, 0);
+				uint xxh = lz4.XXH32(&_unsafeData._outputBufferPtr[0], (uint)targetSize, 0);
 
 				b[0] = (byte)(xxh & 0xFF);
 				b[1] = (byte)((xxh >> 8) & 0xFF);
@@ -613,7 +619,7 @@ namespace IonKiwi.lz4 {
 			if (_ringbufferOffset > _inputBufferSize) _ringbufferOffset = 0;
 		}
 
-		private bool GetFrameInfo() {
+		private unsafe bool GetFrameInfo() {
 
 			if (_hasFrameInfo) {
 				throw new Exception("should not have happend, _hasFrameInfo: " + _hasFrameInfo);
@@ -632,7 +638,7 @@ namespace IonKiwi.lz4 {
 				_frameCount++;
 
 				// reset state
-				lz4.XXH32_reset(_contentHashState, 0);
+				lz4.XXH32_reset(_unsafeData._contentHashState, 0);
 				_blockSize = LZ4FrameBlockSize.Max64KB;
 				_blockMode = LZ4FrameBlockMode.Linked;
 				_checksumMode = LZ4FrameChecksumMode.None;
@@ -736,18 +742,18 @@ namespace IonKiwi.lz4 {
 
 				// resize buffers
 				if (_inputBufferRef == null || _inputBufferRef.Length < _inputBufferSize) {
-					if (_inputBufferHandle.IsAllocated) { _inputBufferHandle.Free(); _inputBufferHandle = default; _inputBufferPtr = null; }
+					if (_inputBufferHandle.IsAllocated) { _inputBufferHandle.Free(); _inputBufferHandle = default; _unsafeData._inputBufferPtr = null; }
 					if (_inputBufferRef != null) { ArrayPool<byte>.Shared.Return(_inputBufferRef); _inputBufferRef = null; }
 					_inputBufferRef = ArrayPool<byte>.Shared.Rent(_inputBufferSize);
 					_inputBufferHandle = GCHandle.Alloc(_inputBufferRef, GCHandleType.Pinned);
-					_inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
+					_unsafeData._inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
 				}
 				if (_outputBufferRef == null || _outputBufferRef.Length < 2 * _outputBufferSize) {
-					if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _outputBufferPtr = null; }
+					if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _unsafeData._outputBufferPtr = null; }
 					if (_outputBufferRef != null) { ArrayPool<byte>.Shared.Return(_outputBufferRef); _outputBufferRef = null; }
 					_outputBufferRef = ArrayPool<byte>.Shared.Rent(2 * _outputBufferSize);
 					_outputBufferHandle = GCHandle.Alloc(_outputBufferRef, GCHandleType.Pinned);
-					_outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
+					_unsafeData._outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
 				}
 
 				_hasFrameInfo = true;
@@ -789,7 +795,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		private bool AcquireNextBlock() {
+		private unsafe bool AcquireNextBlock() {
 			if (!_hasFrameInfo) {
 				if (!GetFrameInfo()) {
 					return false;
@@ -829,7 +835,7 @@ namespace IonKiwi.lz4 {
 
 				if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
 					// calculate hash
-					uint xxh = lz4.XXH32_digest(_contentHashState);
+					uint xxh = lz4.XXH32_digest(_unsafeData._contentHashState);
 
 					// read hash
 					b = new byte[4];
@@ -866,7 +872,7 @@ namespace IonKiwi.lz4 {
 					checksum |= ((uint)b[i] << (i * 8));
 				}
 				// verify checksum
-				uint xxh = lz4.XXH32(&_inputBufferPtr[0], blockSize, 0);
+				uint xxh = lz4.XXH32(&_unsafeData._inputBufferPtr[0], blockSize, 0);
 				if (checksum != xxh) {
 					throw new Exception("Block checksum did not match");
 				}
@@ -881,24 +887,24 @@ namespace IonKiwi.lz4 {
 			if (_ringbufferOffset > _outputBufferSize) _ringbufferOffset = 0;
 
 			if (!isCompressed) {
-				Unsafe.CopyBlock(&_outputBufferPtr[_ringbufferOffset], _inputBufferPtr, blockSize);
+				Unsafe.CopyBlock(&_unsafeData._outputBufferPtr[_ringbufferOffset], _unsafeData._inputBufferPtr, blockSize);
 				_outputBufferBlockSize = (int)blockSize;
 			}
 			else {
-				byte* inputPtr = &_inputBufferPtr[0];
-				byte* outputPtr = &_outputBufferPtr[_ringbufferOffset];
-				byte* dict = &_outputBufferPtr[currentRingbufferOffset];
+				byte* inputPtr = &_unsafeData._inputBufferPtr[0];
+				byte* outputPtr = &_unsafeData._outputBufferPtr[_ringbufferOffset];
+				byte* dict = &_unsafeData._outputBufferPtr[currentRingbufferOffset];
 				int status;
 				if (_blockCount > 1) {
-					status = lz4.LZ4_setStreamDecode(_lz4DecodeStream, dict, _outputBufferSize);
+					status = lz4.LZ4_setStreamDecode(_unsafeData._lz4DecodeStream, dict, _outputBufferSize);
 				}
 				else {
-					status = lz4.LZ4_setStreamDecode(_lz4DecodeStream, null, 0);
+					status = lz4.LZ4_setStreamDecode(_unsafeData._lz4DecodeStream, null, 0);
 				}
 				if (status != 1) {
 					throw new Exception("LZ4_setStreamDecode failed");
 				}
-				int decompressedSize = lz4.LZ4_decompress_safe_continue(_lz4DecodeStream, inputPtr, outputPtr, (int)blockSize, _outputBufferSize);
+				int decompressedSize = lz4.LZ4_decompress_safe_continue(_unsafeData._lz4DecodeStream, inputPtr, outputPtr, (int)blockSize, _outputBufferSize);
 				if (decompressedSize <= 0) {
 					throw new Exception("Decompress failed");
 				}
@@ -906,8 +912,8 @@ namespace IonKiwi.lz4 {
 			}
 
 			if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
-				void* contentPtr = &_outputBufferPtr[_ringbufferOffset];
-				XXH_errorcode status = lz4.XXH32_update(_contentHashState, contentPtr, (uint)_outputBufferBlockSize);
+				void* contentPtr = &_unsafeData._outputBufferPtr[_ringbufferOffset];
+				XXH_errorcode status = lz4.XXH32_update(_unsafeData._contentHashState, contentPtr, (uint)_outputBufferBlockSize);
 				if (status != XXH_errorcode.XXH_OK) {
 					throw new Exception("Failed to update content checksum");
 				}
@@ -918,7 +924,7 @@ namespace IonKiwi.lz4 {
 			return true;
 		}
 
-		private void CompressNextBlock() {
+		private unsafe void CompressNextBlock() {
 
 			// write at least one start frame
 			//if (!_hasWrittenInitialStartFrame) { WriteStartFrame(); }
@@ -947,8 +953,8 @@ namespace IonKiwi.lz4 {
 			_headerBufferSize = 0;
 			_outputBufferOffset = 0;
 
-			byte* inputBufferPtr = &_inputBufferPtr[_ringbufferOffset];
-			byte* outputBufferPtr = &_outputBufferPtr[0];
+			byte* inputBufferPtr = &_unsafeData._inputBufferPtr[_ringbufferOffset];
+			byte* outputBufferPtr = &_unsafeData._outputBufferPtr[0];
 
 			if (!_hasWrittenStartFrame) {
 				WriteStartFrame();
@@ -957,10 +963,10 @@ namespace IonKiwi.lz4 {
 			if (_blockMode == LZ4FrameBlockMode.Independent || _blockCount == 0) {
 				// reset the stream { create independently compressed blocks }
 				if (!_highCompression) {
-					lz4.LZ4_loadDict(_lz4Stream, null, 0);
+					lz4.LZ4_loadDict(_unsafeData._lz4Stream, null, 0);
 				}
 				else {
-					lz4.LZ4_loadDictHC(_lz4HCStream, null, 0);
+					lz4.LZ4_loadDictHC(_unsafeData._lz4HCStream, null, 0);
 				}
 			}
 
@@ -968,7 +974,7 @@ namespace IonKiwi.lz4 {
 			bool isCompressed;
 
 			if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
-				XXH_errorcode status = lz4.XXH32_update(_contentHashState, inputBufferPtr, (uint)_inputBufferOffset);
+				XXH_errorcode status = lz4.XXH32_update(_unsafeData._contentHashState, inputBufferPtr, (uint)_inputBufferOffset);
 				if (status != XXH_errorcode.XXH_OK) {
 					throw new Exception("Failed to update content checksum");
 				}
@@ -976,10 +982,10 @@ namespace IonKiwi.lz4 {
 
 			int outputBytes;
 			if (!_highCompression) {
-				outputBytes = lz4.LZ4_compress_fast_continue(_lz4Stream, inputBufferPtr, outputBufferPtr, _inputBufferOffset, _outputBufferSize, 1);
+				outputBytes = lz4.LZ4_compress_fast_continue(_unsafeData._lz4Stream, inputBufferPtr, outputBufferPtr, _inputBufferOffset, _outputBufferSize, 1);
 			}
 			else {
-				outputBytes = lz4.LZ4_compress_HC_continue(_lz4HCStream, inputBufferPtr, outputBufferPtr, _inputBufferOffset, _outputBufferSize);
+				outputBytes = lz4.LZ4_compress_HC_continue(_unsafeData._lz4HCStream, inputBufferPtr, outputBufferPtr, _inputBufferOffset, _outputBufferSize);
 			}
 			if (outputBytes == 0) {
 				// compression failed or output is too large
@@ -992,7 +998,7 @@ namespace IonKiwi.lz4 {
 				//	LZ4_loadDictHC(_lz4HCStream, null, 0);
 				//}
 
-				Unsafe.CopyBlock(_outputBufferPtr, &_inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
+				Unsafe.CopyBlock(_unsafeData._outputBufferPtr, &_unsafeData._inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
@@ -1007,7 +1013,7 @@ namespace IonKiwi.lz4 {
 				//	LZ4_loadDictHC(_lz4HCStream, null, 0);
 				//}
 
-				Unsafe.CopyBlock(_outputBufferPtr, &_inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
+				Unsafe.CopyBlock(_unsafeData._outputBufferPtr, &_unsafeData._inputBufferPtr[_ringbufferOffset], (uint)_inputBufferOffset);
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
@@ -1033,7 +1039,7 @@ namespace IonKiwi.lz4 {
 			_currentMode = 1;
 		}
 
-		private int CompressData(byte[] buffer, int offset, int count) {
+		private unsafe int CompressData(byte[] buffer, int offset, int count) {
 			// _currentMode == 0 . frame start
 			// _currentMode == 1 . copy header data
 			// _currentMode == 2 . block data
@@ -1086,8 +1092,7 @@ namespace IonKiwi.lz4 {
 
 					if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
 
-						void* targetPtr = &_outputBufferPtr[0];
-						uint xxh = lz4.XXH32(targetPtr, (uint)_outputBufferBlockSize, 0);
+						uint xxh = lz4.XXH32(&_unsafeData._outputBufferPtr[0], (uint)_outputBufferBlockSize, 0);
 
 						_headerBuffer[_headerBufferSize++] = (byte)(xxh & 0xFF);
 						_headerBuffer[_headerBufferSize++] = (byte)((xxh >> 8) & 0xFF);
@@ -1272,7 +1277,7 @@ namespace IonKiwi.lz4 {
 			} while (consumed < count);
 		}
 
-		private int DecompressBlock(byte[] data, int offset, int count) {
+		private unsafe int DecompressBlock(byte[] data, int offset, int count) {
 			int consumed = 0;
 			if (_currentMode == 6) {
 				for (int i = _headerBufferSize, ii = 0; i < 4 && ii < count; i++, ii++) {
@@ -1327,7 +1332,7 @@ namespace IonKiwi.lz4 {
 				if (_headerBufferSize == 4) {
 
 					// calculate hash
-					uint xxh = lz4.XXH32_digest(_contentHashState);
+					uint xxh = lz4.XXH32_digest(_unsafeData._contentHashState);
 
 					if (_headerBuffer[0] != (byte)(xxh & 0xFF) ||
 						_headerBuffer[1] != (byte)((xxh >> 8) & 0xFF) ||
@@ -1375,7 +1380,7 @@ namespace IonKiwi.lz4 {
 						checksum |= ((uint)_headerBuffer[i] << (i * 8));
 					}
 					// verify checksum
-					void* targetPtr = &_inputBufferPtr[0];
+					void* targetPtr = &_unsafeData._inputBufferPtr[0];
 					uint xxh = lz4.XXH32(targetPtr, (uint)_targetBufferSize, 0);
 					if (checksum != xxh) {
 						throw new Exception("Block checksum did not match");
@@ -1394,24 +1399,24 @@ namespace IonKiwi.lz4 {
 				if (_ringbufferOffset > _outputBufferSize) _ringbufferOffset = 0;
 
 				if (!_isCompressed) {
-					Unsafe.CopyBlock(&_outputBufferPtr[_ringbufferOffset], _inputBufferPtr, (uint)_targetBufferSize);
+					Unsafe.CopyBlock(&_unsafeData._outputBufferPtr[_ringbufferOffset], _unsafeData._inputBufferPtr, (uint)_targetBufferSize);
 					_outputBufferBlockSize = _targetBufferSize;
 				}
 				else {
-					byte* inputPtr = &_inputBufferPtr[0];
-					byte* outputPtr = &_outputBufferPtr[_ringbufferOffset];
-					byte* dict = &_outputBufferPtr[currentRingbufferOffset];
+					byte* inputPtr = &_unsafeData._inputBufferPtr[0];
+					byte* outputPtr = &_unsafeData._outputBufferPtr[_ringbufferOffset];
+					byte* dict = &_unsafeData._outputBufferPtr[currentRingbufferOffset];
 					int status;
 					if (_blockCount > 1) {
-						status = lz4.LZ4_setStreamDecode(_lz4DecodeStream, dict, _outputBufferSize);
+						status = lz4.LZ4_setStreamDecode(_unsafeData._lz4DecodeStream, dict, _outputBufferSize);
 					}
 					else {
-						status = lz4.LZ4_setStreamDecode(_lz4DecodeStream, null, 0);
+						status = lz4.LZ4_setStreamDecode(_unsafeData._lz4DecodeStream, null, 0);
 					}
 					if (status != 1) {
 						throw new Exception("LZ4_setStreamDecode failed");
 					}
-					int decompressedSize = lz4.LZ4_decompress_safe_continue(_lz4DecodeStream, inputPtr, outputPtr, _targetBufferSize, _outputBufferSize);
+					int decompressedSize = lz4.LZ4_decompress_safe_continue(_unsafeData._lz4DecodeStream, inputPtr, outputPtr, _targetBufferSize, _outputBufferSize);
 					if (decompressedSize <= 0) {
 						throw new Exception("Decompress failed");
 					}
@@ -1421,8 +1426,8 @@ namespace IonKiwi.lz4 {
 				_innerStream.Write(_outputBufferRef, _ringbufferOffset, _outputBufferBlockSize);
 
 				if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
-					void* contentPtr = &_outputBufferPtr[_ringbufferOffset];
-					XXH_errorcode status = lz4.XXH32_update(_contentHashState, contentPtr, (uint)_outputBufferBlockSize);
+					void* contentPtr = &_unsafeData._outputBufferPtr[_ringbufferOffset];
+					XXH_errorcode status = lz4.XXH32_update(_unsafeData._contentHashState, contentPtr, (uint)_outputBufferBlockSize);
 					if (status != XXH_errorcode.XXH_OK) {
 						throw new Exception("Failed to update content checksum");
 					}
@@ -1439,7 +1444,7 @@ namespace IonKiwi.lz4 {
 			return consumed;
 		}
 
-		private int DecompressHeader(byte[] data, int offset, int count) {
+		private unsafe int DecompressHeader(byte[] data, int offset, int count) {
 			// _currentMode == 0 . no data
 			// _currentMode == 1 . lz4 frame magic
 			// _currentMode == 2 . user frame magic
@@ -1485,7 +1490,7 @@ namespace IonKiwi.lz4 {
 					_frameCount++;
 
 					// reset state
-					lz4.XXH32_reset(_contentHashState, 0);
+					lz4.XXH32_reset(_unsafeData._contentHashState, 0);
 					_blockSize = LZ4FrameBlockSize.Max64KB;
 					_blockMode = LZ4FrameBlockMode.Linked;
 					_checksumMode = LZ4FrameChecksumMode.None;
@@ -1556,18 +1561,18 @@ namespace IonKiwi.lz4 {
 
 					// resize buffers
 					if (_inputBufferRef == null || _inputBufferRef.Length < _inputBufferSize) {
-						if (_inputBufferHandle.IsAllocated) { _inputBufferHandle.Free(); _inputBufferHandle = default; _inputBufferPtr = null; }
+						if (_inputBufferHandle.IsAllocated) { _inputBufferHandle.Free(); _inputBufferHandle = default; _unsafeData._inputBufferPtr = null; }
 						if (_inputBufferRef != null) { ArrayPool<byte>.Shared.Return(_inputBufferRef); _inputBufferRef = null; }
 						_inputBufferRef = ArrayPool<byte>.Shared.Rent(_inputBufferSize);
 						_inputBufferHandle = GCHandle.Alloc(_inputBufferRef, GCHandleType.Pinned);
-						_inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._inputBufferPtr = (byte*)(void*)_inputBufferHandle.AddrOfPinnedObject();
 					}
 					if (_outputBufferRef == null || _outputBufferRef.Length < 2 * _outputBufferSize) {
-						if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _outputBufferPtr = null; }
+						if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _unsafeData._outputBufferPtr = null; }
 						if (_outputBufferRef != null) { ArrayPool<byte>.Shared.Return(_outputBufferRef); _outputBufferRef = null; }
 						_outputBufferRef = ArrayPool<byte>.Shared.Rent(2 * _outputBufferSize);
 						_outputBufferHandle = GCHandle.Alloc(_outputBufferRef, GCHandleType.Pinned);
-						_outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
+						_unsafeData._outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
 					}
 
 					if (hasContentSize) {
@@ -1631,11 +1636,11 @@ namespace IonKiwi.lz4 {
 
 					_outputBufferSize = (int)frameSize;
 					_outputBufferOffset = 0;
-					if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _outputBufferPtr = null; }
+					if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _unsafeData._outputBufferPtr = null; }
 					if (_outputBufferRef != null) { ArrayPool<byte>.Shared.Return(_outputBufferRef); _outputBufferRef = null; }
 					_outputBufferRef = ArrayPool<byte>.Shared.Rent(_outputBufferSize);
 					_outputBufferHandle = GCHandle.Alloc(_outputBufferRef, GCHandleType.Pinned);
-					_outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
+					_unsafeData._outputBufferPtr = (byte*)(void*)_outputBufferHandle.AddrOfPinnedObject();
 					_currentMode = 5;
 				}
 			}
