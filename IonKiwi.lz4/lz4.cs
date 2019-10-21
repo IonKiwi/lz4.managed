@@ -44,58 +44,51 @@ using size_t = System.UInt32;
 
 namespace IonKiwi.lz4 {
 	internal static class lz4 {
+		private const int LZ4_MEMORY_USAGE = 14;
+		private const int LZ4_HASHLOG = (LZ4_MEMORY_USAGE - 2);
+		internal const int LZ4_HASH_SIZE_U32 = (1 << LZ4_HASHLOG);
+		internal const int LZ4_STREAMSIZE_U64 = ((1 << (LZ4_MEMORY_USAGE - 3)) + 4);
+		private const int LZ4HC_HASH_LOG = 15;
+		internal const int LZ4HC_HASHTABLESIZE = (1 << LZ4HC_HASH_LOG);
+		private const int LZ4HC_DICTIONARY_LOGSIZE = 16;
+		internal const int LZ4HC_MAXD = (1 << LZ4HC_DICTIONARY_LOGSIZE);
+		private const int LZ4_STREAMHCSIZE = (4 * LZ4HC_HASHTABLESIZE + 2 * LZ4HC_MAXD + 56);
+		internal const int LZ4_STREAMHCSIZE_SIZET = (LZ4_STREAMHCSIZE / sizeof(size_t));
+		internal const int LZ4_STREAMDECODESIZE_U64 = 4;
 
-		internal const int MINMATCH = 4;
-		internal const int WILDCOPYLENGTH = 8;
-		internal const int LASTLITERALS = 5;
-		internal const int MFLIMIT = 12;
-		internal const int MATCH_SAFEGUARD_DISTANCE = ((2 * WILDCOPYLENGTH) - MINMATCH);
+		private const int LZ4HC_CLEVEL_MIN = 3;
+		private const int LZ4HC_CLEVEL_DEFAULT = 9;
+		private const int LZ4HC_CLEVEL_OPT_MIN = 10;
+		private const int LZ4HC_CLEVEL_MAX = 12;
 
-		internal const int ML_BITS = 4;
-		internal const size_t ML_MASK = ((1U << ML_BITS) - 1);
-		internal const int RUN_BITS = (8 - ML_BITS);
-		internal const size_t RUN_MASK = ((1U << RUN_BITS) - 1);
+		private const uint PRIME32_1 = 2654435761U;
+		private const uint PRIME32_2 = 2246822519U;
+		private const uint PRIME32_3 = 3266489917U;
+		private const uint PRIME32_4 = 668265263U;
+		private const uint PRIME32_5 = 374761393U;
+
+		private static int HASH_UNIT = IntPtr.Size;
+
+		private const int LZ4_DISTANCE_MAX = 65535;
+		private const int ACCELERATION_DEFAULT = 1;
+
+		private const int TRAILING_LITERALS = 3;
+		private const int LZ4_OPT_NUM = (1 << 12);
+
+		private const int WILDCOPYLENGTH = 8;
+		private const int MATCH_SAFEGUARD_DISTANCE = ((2 * WILDCOPYLENGTH) - 4);   /* ensure it's possible to write 2 x wildcopyLength without overflowing output buffer */
+
+		private const int MFLIMIT = 12;
+		private const int LASTLITERALS = 5;
+		private const uint LZ4_MAX_INPUT_SIZE = 0x7E000000;
+		private const int LZ4_64Klimit = ((64 * (1 << 10)) + (MFLIMIT - 1));
+		private const int LZ4_minLength = (MFLIMIT + 1);
+		// NOTE: translation: changed uint to int
+		private const int LZ4_skipTrigger = 6;
+		private const int LZ4_DISTANCE_ABSOLUTE_MAX = 65535;
 
 		internal static int[] inc32table = { 0, 1, 2, 1, 0, 4, 4, 4 };
 		internal static int[] dec64table = { 0, 0, 0, -1, -4, 1, 2, 3 };
-
-		internal const int LZ4_MEMORY_USAGE = 14;
-		internal const int ACCELERATION_DEFAULT = 1;
-		internal const int LZ4_HASHLOG = (LZ4_MEMORY_USAGE - 2);
-		internal const int LZ4_HASHTABLESIZE = (1 << LZ4_MEMORY_USAGE);
-		internal const int LZ4_HASH_SIZE_U32 = (1 << LZ4_HASHLOG);
-		internal const int LZ4_HASH_SIZE_uint = (1 << LZ4_HASHLOG);
-		internal const int LZ4_STREAMSIZE_U64 = (1 << (LZ4_MEMORY_USAGE - 3)) + 4;
-		internal const int LZ4_STREAMSIZE = (LZ4_STREAMSIZE_U64 * 8);
-
-		internal const int LZ4HC_DICTIONARY_LOGSIZE = 16;
-		internal const int LZ4HC_MAXD = (1 << LZ4HC_DICTIONARY_LOGSIZE);
-		internal const int LZ4HC_HASH_LOG = 15;
-		internal const int LZ4HC_HASHTABLESIZE = (1 << LZ4HC_HASH_LOG);
-		internal const int LZ4_STREAMHCSIZE = (4 * LZ4HC_HASHTABLESIZE + 2 * LZ4HC_MAXD + 56); /* 262200 or 262256*/
-		internal const int LZ4_STREAMHCSIZE_SIZET = (LZ4_STREAMHCSIZE / sizeof(size_t));
-
-		internal const int LZ4_MAX_INPUT_SIZE = 0x7E000000   /* 2 113 929 216 bytes */;
-		internal const int LZ4_64Klimit = ((64 * (1 << 10)) + (MFLIMIT - 1));
-		internal const int LZ4_skipTrigger = 6;  /* Increase this value ==> compression run slower on incompressible data */
-		internal const int LZ4_minLength = (MFLIMIT + 1);
-		internal const int LZ4_DISTANCE_MAX = 65535;   /* set to maximum value by default */
-		internal const int LZ4_DISTANCE_ABSOLUTE_MAX = 65535;
-
-		internal const int LZ4HC_CLEVEL_MIN = 3;
-		internal const int LZ4HC_CLEVEL_DEFAULT = 9;
-		internal const int LZ4HC_CLEVEL_OPT_MIN = 10;
-		internal const int LZ4HC_CLEVEL_MAX = 12;
-		internal const int TRAILING_LITERALS = 3;
-
-		internal const int OPTIMAL_ML = (int)((ML_MASK - 1) + MINMATCH);
-		internal const int LZ4_OPT_NUM = (1 << 12);
-
-		internal const uint PRIME32_1 = 2654435761U;
-		internal const uint PRIME32_2 = 2246822519U;
-		internal const uint PRIME32_3 = 3266489917U;
-		internal const uint PRIME32_4 = 668265263U;
-		internal const uint PRIME32_5 = 374761393U;
 
 		private static uint[] DeBruijnBytePos64 = { 0, 0, 0, 0, 0, 1, 1, 2,
 																										 0, 3, 1, 3, 1, 4, 2, 7,
@@ -127,7 +120,7 @@ namespace IonKiwi.lz4 {
     };
 
 		//internal static unsafe int LZ4_freeStream(LZ4_stream_u* LZ4_stream) {
-		//	if (LZ4_stream == null) return 0;   /* support free on NULL */
+		//	if (LZ4_stream == null) return 0;   /* support free on null */
 		//	//DEBUGLOG(5, "LZ4_freeStream %p", LZ4_stream);
 		//	//FREEMEM(LZ4_stream);
 		//	return (0);
@@ -135,7 +128,7 @@ namespace IonKiwi.lz4 {
 
 		//internal static unsafe int LZ4_freeStreamHC(LZ4_streamHC_u* LZ4_streamHCPtr) {
 		//	//DEBUGLOG(4, "LZ4_freeStreamHC(%p)", LZ4_streamHCPtr);
-		//	if (LZ4_streamHCPtr == null) return 0;  /* support free on NULL */
+		//	if (LZ4_streamHCPtr == null) return 0;  /* support free on null */
 
 		//	//FREEMEM(LZ4_streamHCPtr);
 		//	return 0;
@@ -147,7 +140,7 @@ namespace IonKiwi.lz4 {
 		//}
 
 		//internal static unsafe int LZ4_freeStreamDecode(LZ4_streamDecode_u* LZ4_stream) {
-		//	if (LZ4_stream == null) { return 0; }  /* support free on NULL */
+		//	if (LZ4_stream == null) { return 0; }  /* support free on null */
 		//	//FREEMEM(LZ4_stream);
 		//	return 0;
 		//}
@@ -171,49 +164,78 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		internal static unsafe LZ4_stream_u* LZ4_createStream(out IDisposable disposable) {
-			var lz4s = AllocWrapper.Alloc<LZ4_stream_u>(out disposable);
-			//LZ4_stream_u * const lz4s = (LZ4_stream_u*)ALLOC(sizeof(LZ4_stream_t));
+		internal static unsafe LZ4_stream* LZ4_createStream(out IDisposable disposable) {
+			var lz4s = AllocWrapper.Alloc<LZ4_stream>(out disposable);
 			//LZ4_STATIC_ASSERT(LZ4_STREAMSIZE >= sizeof(LZ4_stream_t_internal));    /* A compilation error here means LZ4_STREAMSIZE is not large enough */
 			//DEBUGLOG(4, "LZ4_createStream %p", lz4s);
 			if (lz4s == null) return null;
-			LZ4_initStream(lz4s, (uint)sizeof(LZ4_stream_u));
+			LZ4_initStream(lz4s, (uint)sizeof(LZ4_stream));
 			return lz4s;
 		}
 
-		internal static unsafe LZ4_streamHC_u* LZ4_createStreamHC(out IDisposable disposable) {
-			var LZ4_streamHCPtr = AllocWrapper.Alloc<LZ4_streamHC_u>(out disposable);
-			//LZ4_streamHC_u* LZ4_streamHCPtr = (LZ4_streamHC_u*)ALLOC(sizeof(LZ4_streamHC_u));
+		internal static unsafe LZ4_streamHC* LZ4_createStreamHC(out IDisposable disposable) {
+			var LZ4_streamHCPtr = AllocWrapper.Alloc<LZ4_streamHC>(out disposable);
 			if (LZ4_streamHCPtr == null) return null;
-			LZ4_initStreamHC(LZ4_streamHCPtr, (uint)sizeof(LZ4_streamHC_u));  /* full initialization, malloc'ed buffer can be full of garbage */
+			LZ4_initStreamHC(LZ4_streamHCPtr, (uint)sizeof(LZ4_streamHC));  /* full initialization, malloc'ed buffer can be full of garbage */
 			return LZ4_streamHCPtr;
 		}
 
-		internal static unsafe LZ4_streamDecode_u* LZ4_createStreamDecode(out IDisposable disposable) {
-			var lz4s = AllocWrapper.Alloc<LZ4_streamDecode_u>(out disposable);
-			//LZ4_streamDecode_u* lz4s = (LZ4_streamDecode_u*)ALLOC_AND_ZERO(sizeof(LZ4_streamDecode_u));
+		internal static unsafe LZ4_streamDecode* LZ4_createStreamDecode(out IDisposable disposable) {
+			LZ4_streamDecode* lz4s = AllocWrapper.Alloc<LZ4_streamDecode>(out disposable);
 			//LZ4_STATIC_ASSERT(LZ4_STREAMDECODESIZE >= sizeof(LZ4_streamDecode_t_internal));    /* A compilation error here means LZ4_STREAMDECODESIZE is not large enough */
 			return lz4s;
 		}
 
-		internal static unsafe XXH32_state_s* XXH32_createState(out IDisposable disposable) {
+		internal static unsafe XXH32_state* XXH32_createState(out IDisposable disposable) {
 			//return (XXH32_state_t*)XXH_malloc(sizeof(XXH32_state_t));
-			return AllocWrapper.Alloc<XXH32_state_s>(out disposable);
+			return AllocWrapper.Alloc<XXH32_state>(out disposable);
 		}
 
-		internal static unsafe XXH_errorcode XXH32_reset(XXH32_state_s* statePtr, uint seed) {
-			XXH32_state_s state;   /* using a local state to memcpy() in order to avoid strict-aliasing warnings */
-			Unsafe.InitBlock(&state, 0, (uint)sizeof(XXH32_state_s));
+		private static unsafe LZ4_stream* LZ4_initStream(void* buffer, size_t size) {
+			//DEBUGLOG(5, "LZ4_initStream");
+			if (buffer == null) { return null; }
+			if (size < sizeof(LZ4_stream)) { return null; }
+			Unsafe.InitBlock(buffer, 0, (uint)sizeof(LZ4_stream));
+			return (LZ4_stream*)buffer;
+		}
+
+		private static unsafe LZ4_streamHC* LZ4_initStreamHC(void* buffer, size_t size) {
+			LZ4_streamHC* LZ4_streamHCPtr = (LZ4_streamHC*)buffer;
+			if (buffer == null) return null;
+			if (size < sizeof(LZ4_streamHC)) return null;
+			/* if compilation fails here, LZ4_STREAMHCSIZE must be increased */
+			//LZ4_STATIC_ASSERT(sizeof(LZ4HC_CCtx_internal) <= LZ4_STREAMHCSIZE);
+			//DEBUGLOG(4, "LZ4_initStreamHC(%p, %u)", LZ4_streamHCPtr, (uint)size);
+			/* end-base will trigger a clearTable on starting compression */
+			LZ4_streamHCPtr->internal_donotuse.end = (byte*)-1;
+			LZ4_streamHCPtr->internal_donotuse.baseAddr = null;
+			LZ4_streamHCPtr->internal_donotuse.dictCtx = null;
+			LZ4_streamHCPtr->internal_donotuse.favorDecSpeed = 0;
+			LZ4_streamHCPtr->internal_donotuse.dirty = 0;
+			LZ4_setCompressionLevel(LZ4_streamHCPtr, LZ4HC_CLEVEL_DEFAULT);
+			return LZ4_streamHCPtr;
+		}
+
+		private static unsafe void LZ4_setCompressionLevel(LZ4_streamHC* LZ4_streamHCPtr, int compressionLevel) {
+			//DEBUGLOG(5, "LZ4_setCompressionLevel(%p, %d)", LZ4_streamHCPtr, compressionLevel);
+			if (compressionLevel < 1) compressionLevel = LZ4HC_CLEVEL_DEFAULT;
+			if (compressionLevel > LZ4HC_CLEVEL_MAX) compressionLevel = LZ4HC_CLEVEL_MAX;
+			LZ4_streamHCPtr->internal_donotuse.compressionLevel = (short)compressionLevel;
+		}
+
+		internal static unsafe XXH_errorcode XXH32_reset(XXH32_state* statePtr, uint seed) {
+			XXH32_state state;   /* using a local state to Unsafe.CopyBlock() in order to avoid strict-aliasing warnings */
+			Unsafe.InitBlock(&state, 0, (uint)sizeof(XXH32_state));
 			state.v1 = seed + PRIME32_1 + PRIME32_2;
 			state.v2 = seed + PRIME32_2;
 			state.v3 = seed + 0;
 			state.v4 = seed - PRIME32_1;
 			/* do not write into reserved, planned to be removed in a future version */
-			Unsafe.CopyBlock(statePtr, &state, (uint)sizeof(XXH32_state_s) - sizeof(uint));
+			Unsafe.CopyBlock(statePtr, &state, (uint)sizeof(XXH32_state) - sizeof(uint));
 			return XXH_errorcode.XXH_OK;
 		}
 
-		internal static unsafe uint XXH32_digest(XXH32_state_s* state_in) {
+		internal static unsafe uint XXH32_digest(XXH32_state* state_in) {
 
 			XXH_endianess endian_detected = BitConverter.IsLittleEndian ? XXH_endianess.XXH_littleEndian : XXH_endianess.XXH_bigEndian;
 
@@ -223,128 +245,7 @@ namespace IonKiwi.lz4 {
 				return XXH32_digest_endian(state_in, XXH_endianess.XXH_bigEndian);
 		}
 
-		internal static unsafe uint XXH32(void* input, size_t len, uint seed) {
-			XXH_endianess endian_detected = BitConverter.IsLittleEndian ? XXH_endianess.XXH_littleEndian : XXH_endianess.XXH_bigEndian;
-
-			if ((endian_detected == XXH_endianess.XXH_littleEndian))
-				return XXH32_endian_align(input, len, seed, XXH_endianess.XXH_littleEndian, XXH_alignment.XXH_unaligned);
-			else
-				return XXH32_endian_align(input, len, seed, XXH_endianess.XXH_bigEndian, XXH_alignment.XXH_unaligned);
-		}
-
-		internal static unsafe XXH_errorcode XXH32_update(XXH32_state_s* state_in, void* input, size_t len) {
-			XXH_endianess endian_detected = BitConverter.IsLittleEndian ? XXH_endianess.XXH_littleEndian : XXH_endianess.XXH_bigEndian;
-
-			if ((endian_detected == XXH_endianess.XXH_littleEndian))
-				return XXH32_update_endian(state_in, input, len, XXH_endianess.XXH_littleEndian);
-			else
-				return XXH32_update_endian(state_in, input, len, XXH_endianess.XXH_bigEndian);
-		}
-
-		private static unsafe XXH_errorcode XXH32_update_endian(XXH32_state_s* state, void* input, size_t len, XXH_endianess endian) {
-			if (input == null)
-				return XXH_errorcode.XXH_ERROR;
-
-			{
-				byte* p = (byte*)input;
-				byte* bEnd = p + len;
-
-				state->total_len_32 += (uint)len;
-				state->large_len |= ((len >= 16) ? 1u : 0) | ((state->total_len_32 >= 16) ? 1u : 0);
-
-				if (state->memsize + len < 16) {   /* fill in tmp buffer */
-					Unsafe.CopyBlock((byte*)(state->mem32) + state->memsize, input, (uint)len);
-					state->memsize += (uint)len;
-					return XXH_errorcode.XXH_OK;
-				}
-
-				if (state->memsize != 0) {   /* some data left from previous update */
-					Unsafe.CopyBlock((byte*)(state->mem32) + state->memsize, input, 16 - state->memsize);
-					{
-						uint* p32 = state->mem32;
-						state->v1 = XXH32_round(state->v1, XXH_readLE32(p32, endian)); p32++;
-						state->v2 = XXH32_round(state->v2, XXH_readLE32(p32, endian)); p32++;
-						state->v3 = XXH32_round(state->v3, XXH_readLE32(p32, endian)); p32++;
-						state->v4 = XXH32_round(state->v4, XXH_readLE32(p32, endian));
-					}
-					p += 16 - state->memsize;
-					state->memsize = 0;
-				}
-
-				if (p <= bEnd - 16) {
-					byte* limit = bEnd - 16;
-					uint v1 = state->v1;
-					uint v2 = state->v2;
-					uint v3 = state->v3;
-					uint v4 = state->v4;
-
-					do {
-						v1 = XXH32_round(v1, XXH_readLE32(p, endian)); p += 4;
-						v2 = XXH32_round(v2, XXH_readLE32(p, endian)); p += 4;
-						v3 = XXH32_round(v3, XXH_readLE32(p, endian)); p += 4;
-						v4 = XXH32_round(v4, XXH_readLE32(p, endian)); p += 4;
-					} while (p <= limit);
-
-					state->v1 = v1;
-					state->v2 = v2;
-					state->v3 = v3;
-					state->v4 = v4;
-				}
-
-				if (p < bEnd) {
-					Unsafe.CopyBlock(state->mem32, p, (uint)(bEnd - p));
-					state->memsize = (uint)(bEnd - p);
-				}
-			}
-
-			return XXH_errorcode.XXH_OK;
-		}
-
-		private static unsafe uint XXH_readLE32(void* ptr, XXH_endianess endian) {
-			return XXH_readLE32_align(ptr, endian, XXH_alignment.XXH_unaligned);
-		}
-
-		private static unsafe uint XXH32_endian_align(void* input, size_t len, uint seed,
-													XXH_endianess endian, XXH_alignment align) {
-
-			byte* p = (byte*)input;
-			byte* bEnd = p + len;
-			uint h32;
-
-			if (len >= 16) {
-				byte* limit = bEnd - 15;
-				uint v1 = seed + PRIME32_1 + PRIME32_2;
-				uint v2 = seed + PRIME32_2;
-				uint v3 = seed + 0;
-				uint v4 = seed - PRIME32_1;
-
-				do {
-					v1 = XXH32_round(v1, XXH_readLE32_align(p, endian, align)); p += 4;
-					v2 = XXH32_round(v2, XXH_readLE32_align(p, endian, align)); p += 4;
-					v3 = XXH32_round(v3, XXH_readLE32_align(p, endian, align)); p += 4;
-					v4 = XXH32_round(v4, XXH_readLE32_align(p, endian, align)); p += 4;
-				} while (p < limit);
-
-				h32 = XXH_rotl32(v1, 1) + XXH_rotl32(v2, 7)
-						+ XXH_rotl32(v3, 12) + XXH_rotl32(v4, 18);
-			}
-			else {
-				h32 = seed + PRIME32_5;
-			}
-
-			h32 += (uint)len;
-
-			return XXH32_finalize(h32, p, len & 15, endian, align);
-		}
-
-		private static uint XXH32_round(uint seed, uint input) {
-			seed += input * PRIME32_2;
-			seed = XXH_rotl32(seed, 13);
-			seed *= PRIME32_1;
-			return seed;
-		}
-
-		private static unsafe uint XXH32_digest_endian(XXH32_state_s* state, XXH_endianess endian) {
+		private static unsafe uint XXH32_digest_endian(XXH32_state* state, XXH_endianess endian) {
 			uint h32;
 
 			if (state->large_len != 0) {
@@ -364,26 +265,6 @@ namespace IonKiwi.lz4 {
 
 		private static uint XXH_rotl32(uint x, int r) {
 			return ((x << r) | (x >> (32 - r)));
-		}
-
-		private static unsafe uint XXH_read32(void* memPtr) {
-			uint val;
-			Unsafe.CopyBlock(&val, memPtr, 4);
-			return val;
-		}
-
-		private static uint XXH_swap32(uint x) {
-			return ((x << 24) & 0xff000000) |
-							((x << 8) & 0x00ff0000) |
-							((x >> 8) & 0x0000ff00) |
-							((x >> 24) & 0x000000ff);
-		}
-
-		private static unsafe uint XXH_readLE32_align(void* ptr, XXH_endianess endian, XXH_alignment align) {
-			if (align == XXH_alignment.XXH_unaligned)
-				return endian == XXH_endianess.XXH_littleEndian ? XXH_read32(ptr) : XXH_swap32(XXH_read32(ptr));
-			else
-				return endian == XXH_endianess.XXH_littleEndian ? *(uint*)ptr : XXH_swap32(*(uint*)ptr);
 		}
 
 		private static unsafe uint XXH32_finalize(uint h32, void* ptr, size_t len,
@@ -415,6 +296,7 @@ namespace IonKiwi.lz4 {
 				case 4:
 					PROCESS4();
 					return XXH32_avalanche(h32);
+
 				case 13:
 					PROCESS4();
 					PROCESS4();
@@ -430,6 +312,7 @@ namespace IonKiwi.lz4 {
 					PROCESS4();
 					PROCESS1();
 					return XXH32_avalanche(h32);
+
 				case 14:
 					PROCESS4();
 					PROCESS4();
@@ -448,6 +331,7 @@ namespace IonKiwi.lz4 {
 					PROCESS1();
 					PROCESS1();
 					return XXH32_avalanche(h32);
+
 				case 15:
 					PROCESS4();
 					PROCESS4();
@@ -488,6 +372,26 @@ namespace IonKiwi.lz4 {
 			return h32;   /* reaching this point is deemed impossible */
 		}
 
+		private static unsafe uint XXH_readLE32_align(void* ptr, XXH_endianess endian, XXH_alignment align) {
+			if (align == XXH_alignment.XXH_unaligned)
+				return endian == XXH_endianess.XXH_littleEndian ? XXH_read32(ptr) : XXH_swap32(XXH_read32(ptr));
+			else
+				return endian == XXH_endianess.XXH_littleEndian ? *(uint*)ptr : XXH_swap32(*(uint*)ptr);
+		}
+
+		private static unsafe uint XXH_read32(void* memPtr) {
+			uint val;
+			Unsafe.CopyBlock(&val, memPtr, 4);
+			return val;
+		}
+
+		private static uint XXH_swap32(uint x) {
+			return ((x << 24) & 0xff000000) |
+							((x << 8) & 0x00ff0000) |
+							((x >> 8) & 0x0000ff00) |
+							((x >> 24) & 0x000000ff);
+		}
+
 		private static uint XXH32_avalanche(uint h32) {
 			h32 ^= h32 >> 15;
 			h32 *= PRIME32_2;
@@ -497,13 +401,134 @@ namespace IonKiwi.lz4 {
 			return (h32);
 		}
 
-		internal static unsafe int LZ4_loadDict(LZ4_stream_u* LZ4_dict, char* dictionary, int dictSize) {
+		internal static unsafe uint XXH32(void* input, size_t len, uint seed) {
+			XXH_endianess endian_detected = BitConverter.IsLittleEndian ? XXH_endianess.XXH_littleEndian : XXH_endianess.XXH_bigEndian;
+
+			if ((endian_detected == XXH_endianess.XXH_littleEndian))
+				return XXH32_endian_align(input, len, seed, XXH_endianess.XXH_littleEndian, XXH_alignment.XXH_unaligned);
+			else
+				return XXH32_endian_align(input, len, seed, XXH_endianess.XXH_bigEndian, XXH_alignment.XXH_unaligned);
+		}
+
+		private static unsafe uint XXH32_endian_align(void* input, size_t len, uint seed, XXH_endianess endian, XXH_alignment align) {
+
+			byte* p = (byte*)input;
+			byte* bEnd = p + len;
+			uint h32;
+
+			if (len >= 16) {
+				byte* limit = bEnd - 15;
+				uint v1 = seed + PRIME32_1 + PRIME32_2;
+				uint v2 = seed + PRIME32_2;
+				uint v3 = seed + 0;
+				uint v4 = seed - PRIME32_1;
+
+				do {
+					v1 = XXH32_round(v1, XXH_readLE32_align(p, endian, align)); p += 4;
+					v2 = XXH32_round(v2, XXH_readLE32_align(p, endian, align)); p += 4;
+					v3 = XXH32_round(v3, XXH_readLE32_align(p, endian, align)); p += 4;
+					v4 = XXH32_round(v4, XXH_readLE32_align(p, endian, align)); p += 4;
+				} while (p < limit);
+
+				h32 = XXH_rotl32(v1, 1) + XXH_rotl32(v2, 7)
+						+ XXH_rotl32(v3, 12) + XXH_rotl32(v4, 18);
+			}
+			else {
+				h32 = seed + PRIME32_5;
+			}
+
+			h32 += (uint)len;
+
+			return XXH32_finalize(h32, p, len & 15, endian, align);
+		}
+
+		private static uint XXH32_round(uint seed, uint input) {
+			seed += input * PRIME32_2;
+			seed = XXH_rotl32(seed, 13);
+			seed *= PRIME32_1;
+			return seed;
+		}
+
+		internal static unsafe XXH_errorcode XXH32_update(XXH32_state* state_in, void* input, size_t len) {
+			XXH_endianess endian_detected = BitConverter.IsLittleEndian ? XXH_endianess.XXH_littleEndian : XXH_endianess.XXH_bigEndian;
+
+			if ((endian_detected == XXH_endianess.XXH_littleEndian))
+				return XXH32_update_endian(state_in, input, len, XXH_endianess.XXH_littleEndian);
+			else
+				return XXH32_update_endian(state_in, input, len, XXH_endianess.XXH_bigEndian);
+		}
+
+		private static unsafe XXH_errorcode XXH32_update_endian(XXH32_state* state, void* input, size_t len, XXH_endianess endian) {
+			if (input == null)
+				return XXH_errorcode.XXH_ERROR;
+
+			{
+				byte* p = (byte*)input;
+				byte* bEnd = p + len;
+
+				state->total_len_32 += (uint)len;
+				state->large_len |= ((len >= 16) ? 1u : 0) | ((state->total_len_32 >= 16) ? 1u : 0);
+
+				if (state->memsize + len < 16) {   /* fill in tmp buffer */
+					Unsafe.CopyBlock((byte*)(state->mem32) + state->memsize, input, len);
+					state->memsize += (uint)len;
+					return XXH_errorcode.XXH_OK;
+				}
+
+				if (state->memsize != 0) {   /* some data left from previous update */
+					Unsafe.CopyBlock((byte*)(state->mem32) + state->memsize, input, 16 - state->memsize);
+					{
+						uint* p32 = state->mem32;
+						state->v1 = XXH32_round(state->v1, XXH_readLE32(p32, endian)); p32++;
+						state->v2 = XXH32_round(state->v2, XXH_readLE32(p32, endian)); p32++;
+						state->v3 = XXH32_round(state->v3, XXH_readLE32(p32, endian)); p32++;
+						state->v4 = XXH32_round(state->v4, XXH_readLE32(p32, endian));
+					}
+					p += 16 - state->memsize;
+					state->memsize = 0;
+				}
+
+				if (p <= bEnd - 16) {
+					byte* limit = bEnd - 16;
+					uint v1 = state->v1;
+					uint v2 = state->v2;
+					uint v3 = state->v3;
+					uint v4 = state->v4;
+
+					do {
+						v1 = XXH32_round(v1, XXH_readLE32(p, endian)); p += 4;
+						v2 = XXH32_round(v2, XXH_readLE32(p, endian)); p += 4;
+						v3 = XXH32_round(v3, XXH_readLE32(p, endian)); p += 4;
+						v4 = XXH32_round(v4, XXH_readLE32(p, endian)); p += 4;
+					} while (p <= limit);
+
+					state->v1 = v1;
+					state->v2 = v2;
+					state->v3 = v3;
+					state->v4 = v4;
+				}
+
+				if (p < bEnd) {
+					Unsafe.CopyBlock(state->mem32, p, (size_t)(bEnd - p));
+					state->memsize = (uint)(bEnd - p);
+				}
+			}
+
+			return XXH_errorcode.XXH_OK;
+		}
+
+		private static unsafe uint XXH_readLE32(void* ptr, XXH_endianess endian) {
+			return XXH_readLE32_align(ptr, endian, XXH_alignment.XXH_unaligned);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		internal static unsafe int LZ4_loadDict(LZ4_stream* LZ4_dict, byte* dictionary, int dictSize) {
 
 			LZ4_stream_t_internal* dict = &LZ4_dict->internal_donotuse;
 			tableType_t tableType = tableType_t.byU32;
 			byte* p = (byte*)dictionary;
 			byte* dictEnd = p + dictSize;
-			byte* basePtr;
+			byte* baseAddr;
 
 			//DEBUGLOG(4, "LZ4_loadDict (%i bytes from %p into %p)", dictSize, dictionary, LZ4_dict);
 
@@ -513,7 +538,7 @@ namespace IonKiwi.lz4 {
 			 * when compressing using this dictionary */
 			LZ4_resetStream(LZ4_dict);
 
-			/* We always increment the offset by 64 KB, since, if the dict is longer,
+			/* We always increment the offset by 64 *(1 <<10), since, if the dict is longer,
 			 * we truncate it to the last 64k, and if it's shorter, we still want to
 			 * advance by a whole window length so we can provide the guarantee that
 			 * there are only valid offsets in the window, which allows an optimization
@@ -521,92 +546,179 @@ namespace IonKiwi.lz4 {
 			 * dictionary isn't a full 64k. */
 			dict->currentOffset += 64 * (1 << 10);
 
-			if (dictSize < (int)UIntPtr.Size) {
+			if (dictSize < (int)HASH_UNIT) {
 				return 0;
 			}
 
 			if ((dictEnd - p) > 64 * (1 << 10)) p = dictEnd - 64 * (1 << 10);
-			basePtr = dictEnd - dict->currentOffset;
+			baseAddr = dictEnd - dict->currentOffset;
 			dict->dictionary = p;
 			dict->dictSize = (uint)(dictEnd - p);
 			dict->tableType = (ushort)tableType;
 
-			while (p <= dictEnd - UIntPtr.Size) {
-				LZ4_putPosition(p, dict->hashTable, tableType, basePtr);
+			while (p <= dictEnd - HASH_UNIT) {
+				LZ4_putPosition(p, dict->hashTable, tableType, baseAddr);
 				p += 3;
 			}
 
 			return (int)dict->dictSize;
 		}
 
-		internal static unsafe void LZ4_resetStream(LZ4_stream_u* LZ4_stream) {
+		private static unsafe void LZ4_resetStream(LZ4_stream* LZ4_stream) {
 			//DEBUGLOG(5, "LZ4_resetStream (ctx:%p)", LZ4_stream);
-			Unsafe.InitBlock(LZ4_stream, 0, (uint)sizeof(LZ4_stream_u));
+			Unsafe.InitBlock(LZ4_stream, 0, (uint)sizeof(LZ4_stream));
 		}
 
-		private static unsafe LZ4_stream_u* LZ4_initStream(void* buffer, size_t size) {
-			//DEBUGLOG(5, "LZ4_initStream");
-			if (buffer == null) { return null; }
-			if (size < (uint)sizeof(LZ4_stream_u)) { return null; }
-			Unsafe.InitBlock(buffer, 0, (uint)sizeof(LZ4_stream_u));
-			return (LZ4_stream_u*)buffer;
+		private static unsafe void LZ4_putPosition(byte* p, void* tableBase, tableType_t tableType, byte* srcBase) {
+			uint h = LZ4_hashPosition(p, tableType);
+			LZ4_putPositionOnHash(p, h, tableBase, tableType, srcBase);
 		}
 
-		internal static unsafe int LZ4_setStreamDecode(LZ4_streamDecode_u* LZ4_streamDecode, byte* dictionary, int dictSize) {
-			LZ4_streamDecode_t_internal* lz4sd = &LZ4_streamDecode->internal_donotuse;
-			lz4sd->prefixSize = (size_t)dictSize;
-			lz4sd->prefixEnd = (byte*)dictionary + dictSize;
-			lz4sd->externalDict = null;
-			lz4sd->extDictSize = 0;
-			return 1;
+		private static unsafe uint LZ4_hashPosition(void* p, tableType_t tableType) {
+			// NOTE: translation: changed sizeof(reg_t)==8 to IntPtr.Size == 8
+			if ((IntPtr.Size == 8) && (tableType != tableType_t.byU16)) return LZ4_hash5(LZ4_read_ARCH64(p), tableType);
+			return LZ4_hash4(LZ4_read32(p), tableType);
 		}
 
-		internal static unsafe int LZ4_decompress_safe_continue(LZ4_streamDecode_u* LZ4_streamDecode, byte* source, byte* dest, int compressedSize, int maxOutputSize) {
+		private static unsafe ulong LZ4_read_ARCH64(void* memPtr) {
+			ulong val; Unsafe.CopyBlock(&val, memPtr, 8); return val;
+		}
 
-			LZ4_streamDecode_t_internal* lz4sd = &LZ4_streamDecode->internal_donotuse;
-			int result;
+		private static unsafe uint LZ4_read_ARCH32(void* memPtr) {
+			uint val; Unsafe.CopyBlock(&val, memPtr, 4); return val;
+		}
 
-			if (lz4sd->prefixSize == 0) {
-				/* The first call, no dictionary yet. */
-				Debug.Assert(lz4sd->extDictSize == 0);
-				result = LZ4_decompress_safe(source, dest, compressedSize, maxOutputSize);
-				if (result <= 0) return result;
-				lz4sd->prefixSize = (size_t)result;
-				lz4sd->prefixEnd = (byte*)dest + result;
-			}
-			else if (lz4sd->prefixEnd == (byte*)dest) {
-				/* They're rolling the current segment. */
-				if (lz4sd->prefixSize >= 64 * (1 << 10) - 1)
-					result = LZ4_decompress_safe_withPrefix64k(source, dest, compressedSize, maxOutputSize);
+		private static unsafe uint LZ4_read32(void* memPtr) {
+			uint val; Unsafe.CopyBlock(&val, memPtr, 4); return val;
+		}
 
-				else if (lz4sd->extDictSize == 0)
-					result = LZ4_decompress_safe_withSmallPrefix(source, dest, compressedSize, maxOutputSize,
-																											 lz4sd->prefixSize);
-				else
-					result = LZ4_decompress_safe_doubleDict(source, dest, compressedSize, maxOutputSize,
-																									lz4sd->prefixSize, lz4sd->externalDict, lz4sd->extDictSize);
-				if (result <= 0) return result;
-				lz4sd->prefixSize += (size_t)result;
-				lz4sd->prefixEnd += result;
+		private static unsafe uint LZ4_hash5(ulong sequence, tableType_t tableType) {
+
+			// NOTE: translation: changed uint to int
+			int hashLog = (tableType == tableType_t.byU16) ? LZ4_HASHLOG + 1 : LZ4_HASHLOG;
+			if (BitConverter.IsLittleEndian) {
+				ulong prime5bytes = 889523592379UL;
+				return (uint)(((sequence << 24) * prime5bytes) >> (64 - hashLog));
 			}
 			else {
-				/* The buffer wraps around, or they're switching to another buffer. */
-				lz4sd->extDictSize = lz4sd->prefixSize;
-				lz4sd->externalDict = lz4sd->prefixEnd - lz4sd->extDictSize;
-				result = LZ4_decompress_safe_forceExtDict(source, dest, compressedSize, maxOutputSize,
-																									lz4sd->externalDict, lz4sd->extDictSize);
-				if (result <= 0) return result;
-				lz4sd->prefixSize = (size_t)result;
-				lz4sd->prefixEnd = (byte*)dest + result;
+				ulong prime8bytes = 11400714785074694791UL;
+				return (uint)(((sequence >> 24) * prime8bytes) >> (64 - hashLog));
 			}
-
-			return result;
 		}
 
-		internal static unsafe int LZ4_compress_fast_continue(LZ4_stream_u* LZ4_stream,
+		private static unsafe uint LZ4_hash4(uint sequence, tableType_t tableType) {
+			if (tableType == tableType_t.byU16)
+				return ((sequence * 2654435761U) >> ((4 * 8) - (LZ4_HASHLOG + 1)));
+			else
+				return ((sequence * 2654435761U) >> ((4 * 8) - LZ4_HASHLOG));
+		}
+
+		private static unsafe void LZ4_putPositionOnHash(byte* p, uint h,
+																		void* tableBase, tableType_t tableType,
+															 byte* srcBase) {
+			switch (tableType) {
+				case tableType_t.clearedTable: { /* illegal! */ Debug.Fail("clearedTable"); return; }
+				case tableType_t.byPtr: { byte** hashTable = (byte**)tableBase; hashTable[h] = p; return; }
+				case tableType_t.byU32: { uint* hashTable = (uint*)tableBase; hashTable[h] = (uint)(p - srcBase); return; }
+				case tableType_t.byU16: { ushort* hashTable = (ushort*)tableBase; hashTable[h] = (ushort)(p - srcBase); return; }
+			}
+		}
+
+		// NOTE: translation: changed char* to byte*
+		internal static unsafe int LZ4_loadDictHC(LZ4_streamHC* LZ4_streamHCPtr,
+							 byte* dictionary, int dictSize) {
+
+			LZ4HC_CCtx_internal* ctxPtr = &LZ4_streamHCPtr->internal_donotuse;
+			//DEBUGLOG(4, "LZ4_loadDictHC(%p, %p, %d)", LZ4_streamHCPtr, dictionary, dictSize);
+			Debug.Assert(LZ4_streamHCPtr != null);
+			if (dictSize > 64 * (1 << 10)) {
+				dictionary += (size_t)dictSize - 64 * (1 << 10);
+				dictSize = 64 * (1 << 10);
+			}
+			/* need a full initialization, there are bad side-effects when using resetFast() */
+			{
+				int cLevel = ctxPtr->compressionLevel;
+				LZ4_initStreamHC(LZ4_streamHCPtr, (uint)sizeof(LZ4_streamHC));
+				LZ4_setCompressionLevel(LZ4_streamHCPtr, cLevel);
+			}
+			LZ4HC_init_internal(ctxPtr, (byte*)dictionary);
+			ctxPtr->end = (byte*)dictionary + dictSize;
+			if (dictSize >= 4) LZ4HC_Insert(ctxPtr, ctxPtr->end - 3);
+			return dictSize;
+		}
+
+		private static unsafe void LZ4HC_init_internal(LZ4HC_CCtx_internal* hc4, byte* start) {
+
+			// NOTE: translation: changed uptrval to if
+			if (IntPtr.Size == 8) {
+				ulong startingOffset = (ulong)(hc4->end - hc4->baseAddr);
+				if (startingOffset > 1 * (1U << 30)) {
+					LZ4HC_clearTables(hc4);
+					startingOffset = 0;
+				}
+				startingOffset += 64 * (1 << 10);
+				hc4->nextToUpdate = (uint)startingOffset;
+				hc4->baseAddr = start - startingOffset;
+				hc4->end = start;
+				hc4->dictBase = start - startingOffset;
+				hc4->dictLimit = (uint)startingOffset;
+				hc4->lowLimit = (uint)startingOffset;
+			}
+			else if (IntPtr.Size == 4) {
+				uint startingOffset = (uint)(hc4->end - hc4->baseAddr);
+				if (startingOffset > 1 * (1U << 30)) {
+					LZ4HC_clearTables(hc4);
+					startingOffset = 0;
+				}
+				startingOffset += 64 * (1 << 10);
+				hc4->nextToUpdate = (uint)startingOffset;
+				hc4->baseAddr = start - startingOffset;
+				hc4->end = start;
+				hc4->dictBase = start - startingOffset;
+				hc4->dictLimit = (uint)startingOffset;
+				hc4->lowLimit = (uint)startingOffset;
+			}
+			else {
+				Debug.Fail("IntPtr.Size == " + IntPtr.Size);
+			}
+		}
+
+		private static unsafe void LZ4HC_clearTables(LZ4HC_CCtx_internal* hc4) {
+			// NOTE: translation: changed sizeof(hc4->hashTable) to 4u * lz4.LZ4HC_HASHTABLESIZE
+			// NOTE: translation: changed sizeof(hc4->chainTable) to 2u * lz4.LZ4HC_MAXD
+			Unsafe.InitBlock((void*)hc4->hashTable, 0, 4u * lz4.LZ4HC_HASHTABLESIZE);
+			Unsafe.InitBlock(hc4->chainTable, 0xFF, 2u * lz4.LZ4HC_MAXD);
+		}
+
+		private static unsafe void LZ4HC_Insert(LZ4HC_CCtx_internal* hc4, byte* ip) {
+			ushort* chainTable = hc4->chainTable;
+			uint* hashTable = hc4->hashTable;
+			byte* baseAddr = hc4->baseAddr;
+			uint target = (uint)(ip - baseAddr);
+			uint idx = hc4->nextToUpdate;
+
+			while (idx < target) {
+				uint h = LZ4HC_hashPtr(baseAddr + idx);
+				size_t delta = idx - hashTable[h];
+				if (delta > LZ4_DISTANCE_MAX) delta = LZ4_DISTANCE_MAX;
+				chainTable[(ushort)(idx)] = (ushort)delta;
+				hashTable[h] = idx;
+				idx++;
+			}
+
+			hc4->nextToUpdate = target;
+		}
+
+		private static unsafe uint LZ4HC_hashPtr(void* ptr) {
+			return (((LZ4_read32(ptr)) * 2654435761U) >> ((4 * 8) - LZ4HC_HASH_LOG));
+		}
+
+		// NOTE: translation: changed char* to byte*
+		internal static unsafe int LZ4_compress_fast_continue(LZ4_stream* LZ4_stream,
 																 byte* source, byte* dest,
 																int inputSize, int maxOutputSize,
 																int acceleration) {
+
 			tableType_t tableType = tableType_t.byU32;
 			LZ4_stream_t_internal* streamPtr = &LZ4_stream->internal_donotuse;
 			byte* dictEnd = streamPtr->dictionary + streamPtr->dictSize;
@@ -652,16 +764,16 @@ namespace IonKiwi.lz4 {
 				if (streamPtr->dictCtx != null) {
 					/* We depend here on the fact that dictCtx'es (produced by
 					 * LZ4_loadDict) guarantee that their tables contain no references
-					 * to offsets between dictCtx->currentOffset - 64 KB and
+					 * to offsets between dictCtx->currentOffset - 64 *(1 <<10) and
 					 * dictCtx->currentOffset - dictCtx->dictSize. This makes it safe
-					 * to use noDictIssue even when the dict isn't a full 64 KB.
+					 * to use noDictIssue even when the dict isn't a full 64 *(1 <<10).
 					 */
 					if (inputSize > 4 * (1 << 10)) {
 						/* For compressing large blobs, it is faster to pay the setup
 						 * cost to copy the dictionary's tables into the active context,
 						 * so that the compression loop is only looking into one table.
 						 */
-						Unsafe.CopyBlock(streamPtr, streamPtr->dictCtx, (uint)sizeof(LZ4_stream_u));
+						Unsafe.CopyBlock(streamPtr, streamPtr->dictCtx, (uint)sizeof(LZ4_stream));
 						result = LZ4_compress_generic(streamPtr, source, dest, inputSize, null, maxOutputSize, limitedOutput_directive.limitedOutput, tableType, dict_directive.usingExtDict, dictIssue_directive.noDictIssue, acceleration);
 					}
 					else {
@@ -682,21 +794,6 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		internal static unsafe int LZ4_compress_HC_continue(LZ4_streamHC_u* LZ4_streamHCPtr, byte* src, byte* dst, int srcSize, int dstCapacity) {
-			if (dstCapacity < LZ4_compressBound(srcSize))
-				return LZ4_compressHC_continue_generic(LZ4_streamHCPtr, src, dst, &srcSize, dstCapacity, limitedOutput_directive.limitedOutput);
-			else
-				return LZ4_compressHC_continue_generic(LZ4_streamHCPtr, src, dst, &srcSize, dstCapacity, limitedOutput_directive.notLimited);
-		}
-
-		internal static int LZ4_compressBound(int isize) {
-			return LZ4_COMPRESSBOUND(isize);
-		}
-
-		private static int LZ4_COMPRESSBOUND(int isize) {
-			return ((uint)(isize) > (uint)LZ4_MAX_INPUT_SIZE ? 0 : (isize) + ((isize) / 255) + 16);
-		}
-
 		private static unsafe void LZ4_renormDictT(LZ4_stream_t_internal* LZ4_dict, int nextSize) {
 			Debug.Assert(nextSize >= 0);
 			if (LZ4_dict->currentOffset + (uint)nextSize > 0x80000000) {   /* potential ptrdiff_t overflow (32-bits mode) */
@@ -715,223 +812,18 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		private static unsafe ushort LZ4_readLE16(void* memPtr) {
-			if (BitConverter.IsLittleEndian) {
-				return LZ4_read16(memPtr);
-			}
-			else {
-				byte* p = (byte*)memPtr;
-				return (ushort)((ushort)p[0] + (p[1] << 8));
-			}
-		}
-
-		private static unsafe ushort LZ4_read16(void* memPtr) {
-			ushort val; Unsafe.CopyBlock(&val, memPtr, 2); return val;
-		}
-
-		private static unsafe void LZ4_writeLE16(void* memPtr, ushort value) {
-			if (BitConverter.IsLittleEndian) {
-				LZ4_write16(memPtr, value);
-			}
-			else {
-				byte* p = (byte*)memPtr;
-				p[0] = (byte)value;
-				p[1] = (byte)(value >> 8);
-			}
-		}
-
-		private static unsafe void LZ4_write16(void* memPtr, ushort value) {
-			Unsafe.CopyBlock(memPtr, &value, 2);
-		}
-
-		private static unsafe uint read_variable_length(byte** ip, byte* lencheck, int loop_check, int initial_check, variable_length_error* error) {
-			uint length = 0;
-			uint s;
-			if (initial_check != 0 && ((*ip) >= lencheck)) {    /* overflow detection */
-				*error = variable_length_error.initial_error;
-				return length;
-			}
-			do {
-				s = **ip;
-				(*ip)++;
-				length += s;
-				if (loop_check != 0 && ((*ip) >= lencheck)) {    /* overflow detection */
-					*error = variable_length_error.loop_error;
-					return length;
-				}
-			} while (s == 255);
-
-			return length;
-		}
-
-		private static unsafe void LZ4_wildCopy8(void* dstPtr, void* srcPtr, void* dstEnd) {
-			byte* d = (byte*)dstPtr;
-			byte* s = (byte*)srcPtr;
-			byte* e = (byte*)dstEnd;
-
-			do { Unsafe.CopyBlock(d, s, 8); d += 8; s += 8; } while (d < e);
-		}
-
-		private static unsafe void LZ4_write32(void* memPtr, uint value) {
-			Unsafe.CopyBlock(memPtr, &value, 4);
-		}
-
-		private static unsafe void LZ4_putPosition(byte* p, void* tableBase, tableType_t tableType, byte* srcBase) {
-			uint h = LZ4_hashPosition(p, tableType);
-			LZ4_putPositionOnHash(p, h, tableBase, tableType, srcBase);
-		}
-
-		private static unsafe void LZ4_putPositionOnHash(byte* p, uint h,
-																			void* tableBase, tableType_t tableType,
-																 byte* srcBase) {
-			switch (tableType) {
-				case tableType_t.clearedTable: { /* illegal! */ Debug.Fail("clearedTable"); return; }
-				case tableType_t.byPtr: { byte** hashTable = (byte**)tableBase; hashTable[h] = p; return; }
-				case tableType_t.byU32: { uint* hashTable = (uint*)tableBase; hashTable[h] = (uint)(p - srcBase); return; }
-				case tableType_t.byU16: { ushort* hashTable = (ushort*)tableBase; hashTable[h] = (ushort)(p - srcBase); return; }
-			}
-		}
-
-		private static unsafe byte*
-		LZ4_getPosition(byte* p,
-										 void* tableBase, tableType_t tableType,
-										 byte* srcBase) {
-			uint h = LZ4_hashPosition(p, tableType);
-			return LZ4_getPositionOnHash(h, tableBase, tableType, srcBase);
-		}
-
-		private static unsafe uint LZ4_NbCommonBytes64(ulong val) {
-			if (BitConverter.IsLittleEndian) {
-				return DeBruijnBytePos64[((ulong)((val & (ulong)-(long)val) * 0x0218A392CDABBD3FUL)) >> 58];
-			}
-			else   /* Big Endian CPU */ {
-				int by32 = 8 * 4;  /* 32 on 64 bits (goal), 16 on 32 bits.
-                Just to avoid some static analyzer complaining about shift by 32 on 32-bits target.
-                Note that this code path is never triggered in 32-bits mode. */
-				uint r;
-				if ((val >> by32) == 0) { r = 4; } else { r = 0; val >>= by32; }
-				if ((val >> 16) == 0) { r += 2; val >>= 8; } else { val >>= 24; }
-				r += (val == 0 ? 1u : 0);
-				return r;
-			}
-		}
-
-		private static unsafe uint LZ4_NbCommonBytes32(uint val) {
-			if (BitConverter.IsLittleEndian) {
-				return DeBruijnBytePos32[((uint)((val & -(int)val) * 0x077CB531U)) >> 27];
-			}
-			else   /* Big Endian CPU */ {
-				uint r;
-				if ((val >> 16) == 0) { r = 2; val >>= 8; } else { r = 0; val >>= 24; }
-				r += (val == 0 ? 1u : 0);
-				return r;
-			}
-		}
-
-		private static unsafe uint LZ4_count(byte* pIn, byte* pMatch, byte* pInLimit) {
-			byte* pStart = pIn;
-			if (IntPtr.Size == 4) {
-				if ((pIn < pInLimit - (4 - 1))) {
-					uint diff = LZ4_read_ARCH32(pMatch) ^ LZ4_read_ARCH32(pIn);
-					if (diff == 0) {
-						pIn += 4; pMatch += 4;
-					}
-					else {
-						return LZ4_NbCommonBytes32(diff);
-					}
-				}
-
-				while ((pIn < pInLimit - (4 - 1))) {
-					uint diff = LZ4_read_ARCH32(pMatch) ^ LZ4_read_ARCH32(pIn);
-					if (diff == 0) { pIn += 4; pMatch += 4; continue; }
-					pIn += LZ4_NbCommonBytes32(diff);
-					return (uint)(pIn - pStart);
-				}
-
-				if ((4 == 8) && (pIn < (pInLimit - 3)) && (LZ4_read32(pMatch) == LZ4_read32(pIn))) { pIn += 4; pMatch += 4; }
-				if ((pIn < (pInLimit - 1)) && (LZ4_read16(pMatch) == LZ4_read16(pIn))) { pIn += 2; pMatch += 2; }
-				if ((pIn < pInLimit) && (*pMatch == *pIn)) pIn++;
-				return (uint)(pIn - pStart);
-			}
-			else if (IntPtr.Size == 8) {
-				if ((pIn < pInLimit - (8 - 1))) {
-					ulong diff = LZ4_read_ARCH64(pMatch) ^ LZ4_read_ARCH64(pIn);
-					if (diff == 0) {
-						pIn += 8; pMatch += 8;
-					}
-					else {
-						return LZ4_NbCommonBytes64(diff);
-					}
-				}
-
-				while ((pIn < pInLimit - (8 - 1))) {
-					ulong diff = LZ4_read_ARCH64(pMatch) ^ LZ4_read_ARCH64(pIn);
-					if (diff == 0) { pIn += 8; pMatch += 8; continue; }
-					pIn += LZ4_NbCommonBytes64(diff);
-					return (uint)(pIn - pStart);
-				}
-
-				if ((8 == 8) && (pIn < (pInLimit - 3)) && (LZ4_read32(pMatch) == LZ4_read32(pIn))) { pIn += 4; pMatch += 4; }
-				if ((pIn < (pInLimit - 1)) && (LZ4_read16(pMatch) == LZ4_read16(pIn))) { pIn += 2; pMatch += 2; }
-				if ((pIn < pInLimit) && (*pMatch == *pIn)) pIn++;
-				return (uint)(pIn - pStart);
-			}
-			else {
-				Debug.Fail("IntPtr.Size == " + IntPtr.Size);
-				return 0;
-			}
-		}
-
-		private static unsafe uint LZ4_hashPosition(void* p, tableType_t tableType) {
-			if ((IntPtr.Size == 8) && (tableType != tableType_t.byU16)) return LZ4_hash5(LZ4_read_ARCH64(p), tableType);
-			return LZ4_hash4(LZ4_read32(p), tableType);
-		}
-
-		private static unsafe uint LZ4_hash4(uint sequence, tableType_t tableType) {
-			if (tableType == tableType_t.byU16)
-				return ((sequence * 2654435761U) >> ((MINMATCH * 8) - (LZ4_HASHLOG + 1)));
-			else
-				return ((sequence * 2654435761U) >> ((MINMATCH * 8) - LZ4_HASHLOG));
-		}
-
-		private static unsafe void LZ4_clearHash(uint h, void* tableBase, tableType_t tableType) {
-			switch (tableType) {
-				default: /* fallthrough */
-				case tableType_t.clearedTable: { /* illegal! */ Debug.Fail("clearedTable"); return; }
-				case tableType_t.byPtr: { byte** hashTable = (byte**)tableBase; hashTable[h] = null; return; }
-				case tableType_t.byU32: { uint* hashTable = (uint*)tableBase; hashTable[h] = 0; return; }
-				case tableType_t.byU16: { ushort* hashTable = (ushort*)tableBase; hashTable[h] = 0; return; }
-			}
-		}
-
-		private static unsafe uint LZ4_read32(void* memPtr) {
-			uint val; Unsafe.CopyBlock(&val, memPtr, 4); return val;
-		}
-
-		private static unsafe uint LZ4_hash5(ulong sequence, tableType_t tableType) {
-			uint hashLog = (tableType == tableType_t.byU16) ? LZ4_HASHLOG + 1u : LZ4_HASHLOG;
-			if (BitConverter.IsLittleEndian) {
-				ulong prime5bytes = 889523592379UL;
-				return (uint)(((sequence << 24) * prime5bytes) >> (int)(64 - hashLog));
-			}
-			else {
-				ulong prime8bytes = 11400714785074694791UL;
-				return (uint)(((sequence >> 24) * prime8bytes) >> (int)(64 - hashLog));
-			}
-		}
-
-		private static unsafe uint LZ4_read_ARCH32(void* memPtr) {
-			uint val; Unsafe.CopyBlock(&val, memPtr, 4); return val;
-		}
-
-		private static unsafe ulong LZ4_read_ARCH64(void* memPtr) {
-			ulong val; Unsafe.CopyBlock(&val, memPtr, 8); return val;
-		}
-
 		private static unsafe byte* LZ4_getPositionOnHash(uint h, void* tableBase, tableType_t tableType, byte* srcBase) {
 			if (tableType == tableType_t.byPtr) { byte** hashTable = (byte**)tableBase; return hashTable[h]; }
 			if (tableType == tableType_t.byU32) { uint* hashTable = (uint*)tableBase; return hashTable[h] + srcBase; }
 			{ ushort* hashTable = (ushort*)tableBase; return hashTable[h] + srcBase; }   /* default, to ensure a return */
+		}
+
+		private static unsafe byte* LZ4_getPosition(byte* p,
+								 void* tableBase, tableType_t tableType,
+								 byte* srcBase) {
+
+			uint h = LZ4_hashPosition(p, tableType);
+			return LZ4_getPositionOnHash(h, tableBase, tableType, srcBase);
 		}
 
 		private static unsafe uint LZ4_getIndexOnHash(uint h, void* tableBase, tableType_t tableType) {
@@ -953,366 +845,50 @@ namespace IonKiwi.lz4 {
 			switch (tableType) {
 				default: /* fallthrough */
 				case tableType_t.clearedTable: /* fallthrough */
-				case tableType_t.byPtr: { /* illegal! */ Debug.Fail("byPtr"); return; }
+				case tableType_t.byPtr: { /* illegal! */ Debug.Fail(tableType.ToString()); return; }
 				case tableType_t.byU32: { uint* hashTable = (uint*)tableBase; hashTable[h] = idx; return; }
 				case tableType_t.byU16: { ushort* hashTable = (ushort*)tableBase; Debug.Assert(idx < 65536); hashTable[h] = (ushort)idx; return; }
 			}
 		}
 
-		private static unsafe int LZ4_decompress_safe(byte* source, byte* dest, int compressedSize, int maxDecompressedSize) {
-			return LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize,
-																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
-																		(byte*)dest, null, 0);
+		private static unsafe void LZ4_write32(void* memPtr, uint value) {
+			Unsafe.CopyBlock(memPtr, &value, 4);
 		}
 
-		private static unsafe int LZ4_decompress_safe_withPrefix64k(byte* source, byte* dest, int compressedSize, int maxOutputSize) {
-			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
-																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.withPrefix64k,
-																		(byte*)dest - 64 * (1 << 10), null, 0);
-		}
-
-		private static unsafe int LZ4_decompress_safe_withSmallPrefix(byte* source, byte* dest, int compressedSize, int maxOutputSize,
-																							 size_t prefixSize) {
-			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
-																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
-																		(byte*)dest - prefixSize, null, 0);
-		}
-
-		private static unsafe int LZ4_decompress_safe_doubleDict(byte* source, byte* dest, int compressedSize, int maxOutputSize,
-																	 size_t prefixSize, void* dictStart, size_t dictSize) {
-			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
-																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.usingExtDict,
-																		(byte*)dest - prefixSize, (byte*)dictStart, dictSize);
-		}
-
-		private static unsafe int LZ4_decompress_safe_forceExtDict(byte* source, byte* dest,
-
-																		 int compressedSize, int maxOutputSize,
-
-																			void* dictStart, size_t dictSize) {
-			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
-																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.usingExtDict,
-																		(byte*)dest, (byte*)dictStart, dictSize);
-		}
-
-		private static unsafe int
-		LZ4_decompress_generic(
-								 byte* src,
-								 byte* dst,
-								 int srcSize,
-								 int outputSize,         /* If endOnInput==endOnInputSize, this value is `dstCapacity` */
-								 endCondition_directive endOnInput,   /* endOnOutputSize, endOnInputSize */
-								 earlyEnd_directive partialDecoding,  /* full, partial */
-								 dict_directive dict,                 /* noDict, withPrefix64k, usingExtDict */
-									byte* lowPrefix,  /* always <= dst, == dst when no prefix */
-									byte* dictStart,  /* only if dict==usingExtDict */
-									size_t dictSize         /* note : = 0 if noDict */
-								 ) {
-			if (src == null) { return -1; }
-
-			{
-				byte* ip = (byte*)src;
-				byte* iend = ip + srcSize;
-
-				byte* op = (byte*)dst;
-				byte* oend = op + outputSize;
-				byte* cpy;
-
-				byte* dictEnd = (dictStart == null) ? null : dictStart + dictSize;
-
-				bool safeDecode = (endOnInput == endCondition_directive.endOnInputSize);
-				bool checkOffset = ((safeDecode) && (dictSize < (int)(64 * (1 << 10))));
-
-
-				/* Set up the "end" pointers for the shortcut. */
-				byte* shortiend = iend - (endOnInput != endCondition_directive.endOnOutputSize ? 14 : 8) /*maxLL*/ - 2 /*offset*/;
-				byte* shortoend = oend - (endOnInput != endCondition_directive.endOnOutputSize ? 14 : 8) /*maxLL*/ - 18 /*maxML*/;
-
-				byte* match;
-				size_t offset;
-				uint token;
-				size_t length;
-
-
-				//DEBUGLOG(5, "LZ4_decompress_generic (srcSize:%i, dstSize:%i)", srcSize, outputSize);
-
-				/* Special cases */
-				Debug.Assert(lowPrefix <= op);
-				if ((endOnInput != endCondition_directive.endOnOutputSize) && ((outputSize == 0))) {
-					/* Empty output buffer */
-					if (partialDecoding != earlyEnd_directive.decode_full_block) return 0;
-					return ((srcSize == 1) && (*ip == 0)) ? 0 : -1;
-				}
-				if ((endOnInput == endCondition_directive.endOnOutputSize) && ((outputSize == 0))) { return (*ip == 0 ? 1 : -1); }
-				if ((endOnInput != endCondition_directive.endOnOutputSize) && (srcSize == 0)) { return -1; }
-
-				/* Main Loop : decode remaining sequences where output < FASTLOOP_SAFE_DISTANCE */
-				while (true) {
-					token = *ip++;
-					length = token >> ML_BITS;  /* literal length */
-
-					Debug.Assert(endOnInput == endCondition_directive.endOnOutputSize || ip <= iend); /* ip < iend before the increment */
-
-					/* A two-stage shortcut for the most common case:
-					 * 1) If the literal length is 0..14, and there is enough space,
-					 * enter the shortcut and copy 16 bytes on behalf of the literals
-					 * (in the fast mode, only 8 bytes can be safely copied this way).
-					 * 2) Further if the match length is 4..18, copy 18 bytes in a similar
-					 * manner; but we ensure that there's enough space in the output for
-					 * those 18 bytes earlier, upon entering the shortcut (in other words,
-					 * there is a combined check for both stages).
-					 */
-					if ((endOnInput != endCondition_directive.endOnOutputSize ? length != RUN_MASK : length <= 8)
-						/* strictly "less than" on input, to re-enter the loop with at least one byte */
-						&& ((endOnInput != endCondition_directive.endOnOutputSize ? (ip < shortiend) ? 1 : 0 : 1) & ((op <= shortoend) ? 1 : 0)) == 1) {
-						/* Copy the literals */
-						Unsafe.CopyBlock(op, ip, endOnInput != endCondition_directive.endOnOutputSize ? 16u : 8u);
-						op += length; ip += length;
-
-						/* The second stage: prepare for match copying, decode full info.
-						 * If it doesn't work out, the info won't be wasted. */
-						length = token & ML_MASK; /* match length */
-						offset = LZ4_readLE16(ip); ip += 2;
-						match = op - offset;
-						Debug.Assert(match <= op); /* check overflow */
-
-						/* Do not deal with overlapping matches. */
-						if ((length != ML_MASK)
-							&& (offset >= 8)
-							&& (dict == dict_directive.withPrefix64k || match >= lowPrefix)) {
-							/* Copy the match. */
-							Unsafe.CopyBlock(op + 0, match + 0, 8);
-							Unsafe.CopyBlock(op + 8, match + 8, 8);
-							Unsafe.CopyBlock(op + 16, match + 16, 2);
-							op += length + MINMATCH;
-							/* Both stages worked, load the next token. */
-							continue;
-						}
-
-						/* The second stage didn't work out, but the info is ready.
-						 * Propel it right to the point of match copying. */
-						goto _copy_match;
-					}
-
-					/* decode literal length */
-					if (length == RUN_MASK) {
-						variable_length_error error = variable_length_error.ok;
-						length += read_variable_length(&ip, iend - RUN_MASK, (int)endOnInput, (int)endOnInput, &error);
-						if (error == variable_length_error.initial_error) { goto _output_error; }
-						if (safeDecode) {
-							if (IntPtr.Size == 4) {
-								if (((uint)(op) + length < (uint)(op))) { goto _output_error; } /* overflow detection */
-								if (((uint)(ip) + length < (uint)(ip))) { goto _output_error; } /* overflow detection */
-							}
-							else if (IntPtr.Size == 8) {
-								if (((ulong)(op) + length < (ulong)(op))) { goto _output_error; } /* overflow detection */
-								if (((ulong)(ip) + length < (ulong)(ip))) { goto _output_error; } /* overflow detection */
-							}
-							else {
-								Debug.Fail("IntPtr.Size == " + IntPtr.Size);
-							}
-						}
-					}
-
-					/* copy literals */
-					cpy = op + length;
-					//LZ4_STATIC_ASSERT(MFLIMIT >= WILDCOPYLENGTH);
-					if (((endOnInput != endCondition_directive.endOnOutputSize) && ((cpy > oend - MFLIMIT) || (ip + length > iend - (2 + 1 + LASTLITERALS))))
-						|| ((endOnInput == endCondition_directive.endOnOutputSize) && (cpy > oend - WILDCOPYLENGTH))) {
-						/* We've either hit the input parsing restriction or the output parsing restriction.
-						 * If we've hit the input parsing condition then this must be the last sequence.
-						 * If we've hit the output parsing condition then we are either using partialDecoding
-						 * or we've hit the output parsing condition.
-						 */
-						if (partialDecoding != earlyEnd_directive.decode_full_block) {
-							/* Since we are partial decoding we may be in this block because of the output parsing
-							 * restriction, which is not valid since the output buffer is allowed to be undersized.
-							 */
-							Debug.Assert(endOnInput != endCondition_directive.endOnOutputSize);
-							/* If we're in this block because of the input parsing condition, then we must be on the
-							 * last sequence (or invalid), so we must check that we exactly consume the input.
-							 */
-							if ((ip + length > iend - (2 + 1 + LASTLITERALS)) && (ip + length != iend)) { goto _output_error; }
-							Debug.Assert(ip + length <= iend);
-							/* We are finishing in the middle of a literals segment.
-							 * Break after the copy.
-							 */
-							if (cpy > oend) {
-								cpy = oend;
-								Debug.Assert(op <= oend);
-								length = (size_t)(oend - op);
-							}
-							Debug.Assert(ip + length <= iend);
-						}
-						else {
-							/* We must be on the last sequence because of the parsing limitations so check
-							 * that we exactly regenerate the original size (must be exact when !endOnInput).
-							 */
-							if ((endOnInput == endCondition_directive.endOnOutputSize) && (cpy != oend)) { goto _output_error; }
-							/* We must be on the last sequence (or invalid) because of the parsing limitations
-							 * so check that we exactly consume the input and don't overrun the output buffer.
-							 */
-							if ((endOnInput != endCondition_directive.endOnOutputSize) && ((ip + length != iend) || (cpy > oend))) { goto _output_error; }
-						}
-						Buffer.MemoryCopy(ip, op, length, length);  /* supports overlapping memory regions, which only matters for in-place decompression scenarios */
-						ip += length;
-						op += length;
-						/* Necessarily EOF when !partialDecoding. When partialDecoding
-						 * it is EOF if we've either filled the output buffer or hit
-						 * the input parsing restriction.
-						 */
-						if (partialDecoding == earlyEnd_directive.decode_full_block || (cpy == oend) || (ip == iend)) {
-							break;
-						}
-					}
-					else {
-						LZ4_wildCopy8(op, ip, cpy);   /* may overwrite up to WILDCOPYLENGTH beyond cpy */
-						ip += length; op = cpy;
-					}
-
-					/* get offset */
-					offset = LZ4_readLE16(ip); ip += 2;
-					match = op - offset;
-
-					/* get matchlength */
-					length = token & ML_MASK;
-
-				_copy_match:
-					if (length == ML_MASK) {
-						variable_length_error error = variable_length_error.ok;
-						length += read_variable_length(&ip, iend - LASTLITERALS + 1, (int)endOnInput, 0, &error);
-						if (error != variable_length_error.ok) goto _output_error;
-						if (safeDecode) {
-							if (IntPtr.Size == 4) {
-								if (((uint)(op) + length < (uint)op)) goto _output_error;   /* overflow detection */
-							}
-							else if (IntPtr.Size == 8) {
-								if (((ulong)(op) + length < (ulong)op)) goto _output_error;   /* overflow detection */
-							}
-							else {
-								Debug.Fail("IntPtr.Size == " + IntPtr.Size);
-							}
-						}
-					}
-					length += MINMATCH;
-
-					if ((checkOffset) && ((match + dictSize < lowPrefix))) goto _output_error;   /* Error : offset outside buffers */
-																																											 /* match starting within external dictionary */
-					if ((dict == dict_directive.usingExtDict) && (match < lowPrefix)) {
-						if ((op + length > oend - LASTLITERALS)) {
-							if (partialDecoding != earlyEnd_directive.decode_full_block) length = Math.Min(length, (size_t)(oend - op));
-							else goto _output_error;   /* doesn't respect parsing restriction */
-						}
-
-						if (length <= (size_t)(lowPrefix - match)) {
-							/* match fits entirely within external dictionary : just copy */
-							Buffer.MemoryCopy(dictEnd - (lowPrefix - match), op, length, length);
-							op += length;
-						}
-						else {
-							/* match stretches into both external dictionary and current block */
-							size_t copySize = (size_t)(lowPrefix - match);
-							size_t restSize = length - copySize;
-							Unsafe.CopyBlock(op, dictEnd - copySize, (uint)copySize);
-							op += copySize;
-							if (restSize > (size_t)(op - lowPrefix)) {  /* overlap copy */
-								byte* endOfMatch = op + restSize;
-								byte* copyFrom = lowPrefix;
-								while (op < endOfMatch) *op++ = *copyFrom++;
-							}
-							else {
-								Unsafe.CopyBlock(op, lowPrefix, (uint)restSize);
-								op += restSize;
-							}
-						}
-						continue;
-					}
-					Debug.Assert(match >= lowPrefix);
-
-					/* copy match within block */
-					cpy = op + length;
-
-					/* partialDecoding : may end anywhere within the block */
-					Debug.Assert(op <= oend);
-					if (partialDecoding != earlyEnd_directive.decode_full_block && (cpy > oend - MATCH_SAFEGUARD_DISTANCE)) {
-						size_t mlen = Math.Min(length, (size_t)(oend - op));
-						byte* matchEnd = match + mlen;
-						byte* copyEnd = op + mlen;
-						if (matchEnd > op) {   /* overlap copy */
-							while (op < copyEnd) { *op++ = *match++; }
-						}
-						else {
-							Unsafe.CopyBlock(op, match, (uint)mlen);
-						}
-						op = copyEnd;
-						if (op == oend) { break; }
-						continue;
-					}
-
-					if ((offset < 8)) {
-						LZ4_write32(op, 0);   /* silence msan warning when offset==0 */
-						op[0] = match[0];
-						op[1] = match[1];
-						op[2] = match[2];
-						op[3] = match[3];
-						match += inc32table[offset];
-						Unsafe.CopyBlock(op + 4, match, 4);
-						match -= dec64table[offset];
-					}
-					else {
-						Unsafe.CopyBlock(op, match, 8);
-						match += 8;
-					}
-					op += 8;
-
-					if ((cpy > oend - MATCH_SAFEGUARD_DISTANCE)) {
-						byte* oCopyLimit = oend - (WILDCOPYLENGTH - 1);
-						if (cpy > oend - LASTLITERALS) { goto _output_error; } /* Error : last LASTLITERALS bytes must be literals (uncompressed) */
-						if (op < oCopyLimit) {
-							LZ4_wildCopy8(op, match, oCopyLimit);
-							match += oCopyLimit - op;
-							op = oCopyLimit;
-						}
-						while (op < cpy) { *op++ = *match++; }
-					}
-					else {
-						Unsafe.CopyBlock(op, match, 8);
-						if (length > 16) { LZ4_wildCopy8(op + 8, match + 8, cpy); }
-					}
-					op = cpy;   /* wildcopy correction */
-				}
-
-				/* end of decoding */
-				if (endOnInput != endCondition_directive.endOnOutputSize) {
-					return (int)(((byte*)op) - dst);     /* Nb of output bytes decoded */
-				}
-				else {
-					return (int)(((byte*)ip) - src);   /* Nb of input bytes read */
-				}
-
-			/* Overflow error detected */
-			_output_error:
-				return (int)(-(((byte*)ip) - src)) - 1;
+		private static unsafe void LZ4_writeLE16(void* memPtr, ushort value) {
+			if (BitConverter.IsLittleEndian) {
+				LZ4_write16(memPtr, value);
+			}
+			else {
+				byte* p = (byte*)memPtr;
+				p[0] = (byte)value;
+				p[1] = (byte)(value >> 8);
 			}
 		}
 
+		private static unsafe void LZ4_write16(void* memPtr, ushort value) {
+			Unsafe.CopyBlock(memPtr, &value, 2);
+		}
+
+		// NOTE: translation: changed char* to byte*
 		private static unsafe int LZ4_compress_generic(
-										 LZ4_stream_t_internal* cctx,
-											byte* source,
-										 byte* dest,
-											int inputSize,
-										 int* inputConsumed, /* only written when outputDirective == fillOutput */
-											int maxOutputSize,
-											limitedOutput_directive outputDirective,
-											tableType_t tableType,
-											dict_directive dictDirective,
-											dictIssue_directive dictIssue,
-											int acceleration) {
+								 LZ4_stream_t_internal* cctx,
+									byte* source,
+								 byte* dest,
+									int inputSize,
+								 int* inputConsumed, /* only written when outputDirective == fillOutput */
+									int maxOutputSize,
+									limitedOutput_directive outputDirective,
+									tableType_t tableType,
+									dict_directive dictDirective,
+									dictIssue_directive dictIssue,
+									int acceleration) {
+
 			int result;
 			byte* ip = (byte*)source;
 
 			uint startIndex = cctx->currentOffset;
-			byte* basePtr = (byte*)source - startIndex;
+			byte* baseAddr = (byte*)source - startIndex;
 			byte* lowLimit;
 
 			LZ4_stream_t_internal* dictCtx = (LZ4_stream_t_internal*)cctx->dictCtx;
@@ -1322,6 +898,7 @@ namespace IonKiwi.lz4 {
 				 dictDirective == dict_directive.usingDictCtx ? dictCtx->dictSize : cctx->dictSize;
 			uint dictDelta = (dictDirective == dict_directive.usingDictCtx) ? startIndex - dictCtx->currentOffset : 0;   /* make indexes in dictCtx comparable with index in current context */
 
+			// NOTE: translation: changed int to bool
 			bool maybe_extMem = (dictDirective == dict_directive.usingExtDict) || (dictDirective == dict_directive.usingDictCtx);
 			uint prefixIdxLimit = startIndex - dictSize;   /* used when dictDirective == dictSmall */
 			byte* dictEnd = dictionary + dictSize;
@@ -1368,14 +945,15 @@ namespace IonKiwi.lz4 {
 
 			if (inputSize < LZ4_minLength) goto _last_literals;        /* Input too small, no compression (all literals) */
 
-			/* First Byte */
-			LZ4_putPosition(ip, cctx->hashTable, tableType, basePtr);
+			/* First byte */
+			LZ4_putPosition(ip, cctx->hashTable, tableType, baseAddr);
 			ip++; forwardH = LZ4_hashPosition(ip, tableType);
 
 			/* Main Loop */
 			for (; ; ) {
 				byte* match;
 				byte* token;
+
 				byte* filledIp;
 
 				/* Find a match */
@@ -1392,28 +970,29 @@ namespace IonKiwi.lz4 {
 						if ((forwardIp > mflimitPlusOne)) goto _last_literals;
 						Debug.Assert(ip < mflimitPlusOne);
 
-						match = LZ4_getPositionOnHash(h, cctx->hashTable, tableType, basePtr);
+						match = LZ4_getPositionOnHash(h, cctx->hashTable, tableType, baseAddr);
 						forwardH = LZ4_hashPosition(forwardIp, tableType);
-						LZ4_putPositionOnHash(ip, h, cctx->hashTable, tableType, basePtr);
+						LZ4_putPositionOnHash(ip, h, cctx->hashTable, tableType, baseAddr);
 
 					} while ((match + LZ4_DISTANCE_MAX < ip)
 								 || (LZ4_read32(match) != LZ4_read32(ip)));
 
 				}
-				else {   /* byU32, byU16 */
+				else {   /* byuint, byushort */
 
 					byte* forwardIp = ip;
 					int step = 1;
 					int searchMatchNb = acceleration << LZ4_skipTrigger;
 					do {
 						uint h = forwardH;
-						uint current = (uint)(forwardIp - basePtr);
+						uint current = (uint)(forwardIp - baseAddr);
 						uint matchIndex = LZ4_getIndexOnHash(h, cctx->hashTable, tableType);
 						Debug.Assert(matchIndex <= current);
-						if (IntPtr.Size == 4)
-							Debug.Assert(forwardIp - basePtr < (int)(2 * (1U << 30) - 1));
-						else if (IntPtr.Size == 8)
-							Debug.Assert(forwardIp - basePtr < (long)(2 * (1U << 30) - 1));
+						// NOTE: translation: changed ptrdiff_t
+						if (IntPtr.Size == 8)
+							Debug.Assert(forwardIp - baseAddr < (long)(2 * (1U << 30) - 1));
+						else if (IntPtr.Size == 4)
+							Debug.Assert(forwardIp - baseAddr < (int)(2 * (1U << 30) - 1));
 						else
 							Debug.Fail("IntPtr.Size == " + IntPtr.Size);
 						ip = forwardIp;
@@ -1433,24 +1012,24 @@ namespace IonKiwi.lz4 {
 								lowLimit = dictionary;
 							}
 							else {
-								match = basePtr + matchIndex;
+								match = baseAddr + matchIndex;
 								lowLimit = (byte*)source;
 							}
 						}
 						else if (dictDirective == dict_directive.usingExtDict) {
 							if (matchIndex < startIndex) {
 								//DEBUGLOG(7, "extDict candidate: matchIndex=%5u  <  startIndex=%5u", matchIndex, startIndex);
-								Debug.Assert(startIndex - matchIndex >= MINMATCH);
+								Debug.Assert(startIndex - matchIndex >= 4);
 								match = dictBase + matchIndex;
 								lowLimit = dictionary;
 							}
 							else {
-								match = basePtr + matchIndex;
+								match = baseAddr + matchIndex;
 								lowLimit = (byte*)source;
 							}
 						}
 						else {   /* single continuous memory segment */
-							match = basePtr + matchIndex;
+							match = baseAddr + matchIndex;
 						}
 						forwardH = LZ4_hashPosition(forwardIp, tableType);
 						LZ4_putIndexOnHash(current, h, cctx->hashTable, tableType);
@@ -1485,19 +1064,20 @@ namespace IonKiwi.lz4 {
 						return 0;   /* cannot compress within `dst` budget. Stored indexes in hash table are nonetheless fine */
 					}
 					if ((outputDirective == limitedOutput_directive.fillOutput) &&
-							((op + (litLength + 240) / 255 /* litlen */ + litLength /* literals */ + 2 /* offset */ + 1 /* token */ + MFLIMIT - MINMATCH /* min last literals so last match is <= end - MFLIMIT */ > olimit))) {
+							((op + (litLength + 240) / 255 /* litlen */ + litLength /* literals */ + 2 /* offset */ + 1 /* token */ + MFLIMIT - 4 /* min last literals so last match is <= end - MFLIMIT */ > olimit))) {
 						op--;
 						goto _last_literals;
 					}
-					if (litLength >= RUN_MASK) {
-						int len = (int)(litLength - RUN_MASK);
+					if (litLength >= ((1U << (8 - 4)) - 1)) {
+						int len = (int)(litLength - ((1U << (8 - 4)) - 1));
 
-						*token = ((byte)RUN_MASK << ML_BITS);
+						// NOTE: translation: added byte cast
+						*token = (byte)(((1U << (8 - 4)) - 1) << 4);
 						for (; len >= 255; len -= 255) *op++ = 255;
 
 						*op++ = (byte)len;
 					}
-					else *token = (byte)(litLength << ML_BITS);
+					else *token = (byte)(litLength << 4);
 
 					/* Copy Literals */
 					LZ4_wildCopy8(op, anchor, op + litLength);
@@ -1508,15 +1088,15 @@ namespace IonKiwi.lz4 {
 
 			_next_match:
 				/* at this stage, the following variables must be correctly set :
-         * - ip : at start of LZ operation
-         * - match : at start of previous pattern occurence; can be within current prefix, or within extDict
-         * - offset : if maybe_ext_memSegment==1 (constant)
-         * - lowLimit : must be == dictionary to mean "match is within extDict"; must be == source otherwise
-         * - token and *token : position to write 4-bits for match length; higher 4-bits for literal length supposed already written
-         */
+				 * - ip : at start of LZ operation
+				 * - match : at start of previous pattern occurence; can be within current prefix, or within extDict
+				 * - offset : if maybe_ext_memSegment==1 (ant)
+				 * - lowLimit : must be == dictionary to mean "match is within extDict"; must be == source otherwise
+				 * - token and *token : position to write 4-bits for match length; higher 4-bits for literal length supposed already written
+				 */
 
 				if ((outputDirective == limitedOutput_directive.fillOutput) &&
-						(op + 2 /* offset */ + 1 /* token */ + MFLIMIT - MINMATCH /* min last literals so last match is <= end - MFLIMIT */ > olimit)) {
+						(op + 2 /* offset */ + 1 /* token */ + MFLIMIT - 4 /* min last literals so last match is <= end - MFLIMIT */ > olimit)) {
 					/* the match was too close to the end, rewind and go to last literals */
 					op = token;
 					goto _last_literals;
@@ -1524,7 +1104,8 @@ namespace IonKiwi.lz4 {
 
 				/* Encode Offset */
 				if (maybe_extMem) {   /* static test */
-															//DEBUGLOG(6, "             with offset=%u  (ext if > %i)", offset, (int)(ip - (byte*)source));
+
+					//DEBUGLOG(6, "             with offset=%u  (ext if > %i)", offset, (int)(ip - (byte*)source));
 					Debug.Assert(offset <= LZ4_DISTANCE_MAX && offset > 0);
 					LZ4_writeLE16(op, (ushort)offset); op += 2;
 				}
@@ -1543,19 +1124,19 @@ namespace IonKiwi.lz4 {
 						byte* limit = ip + (dictEnd - match);
 						Debug.Assert(dictEnd > match);
 						if (limit > matchlimit) limit = matchlimit;
-						matchCode = LZ4_count(ip + MINMATCH, match + MINMATCH, limit);
-						ip += (size_t)matchCode + MINMATCH;
+						matchCode = LZ4_count(ip + 4, match + 4, limit);
+						ip += (size_t)matchCode + 4;
 						if (ip == limit) {
 							uint more = LZ4_count(limit, (byte*)source, matchlimit);
 							matchCode += more;
 							ip += more;
 						}
-						//DEBUGLOG(6, "             with matchLength=%u starting in extDict", matchCode + MINMATCH);
+						//DEBUGLOG(6, "             with matchLength=%u starting in extDict", matchCode + 4);
 					}
 					else {
-						matchCode = LZ4_count(ip + MINMATCH, match + MINMATCH, matchlimit);
-						ip += (size_t)matchCode + MINMATCH;
-						//DEBUGLOG(6, "             with matchLength=%u", matchCode + MINMATCH);
+						matchCode = LZ4_count(ip + 4, match + 4, matchlimit);
+						ip += (size_t)matchCode + 4;
+						//DEBUGLOG(6, "             with matchLength=%u", matchCode + 4);
 					}
 
 					if ((outputDirective != limitedOutput_directive.notLimited) &&    /* Check output buffer overflow */
@@ -1585,10 +1166,11 @@ namespace IonKiwi.lz4 {
 							return 0;   /* cannot compress within `dst` budget. Stored indexes in hash table are nonetheless fine */
 						}
 					}
-					if (matchCode >= ML_MASK) {
+					if (matchCode >= ((1U << 4) - 1)) {
 
-						*token += (byte)ML_MASK;
-						matchCode -= (byte)ML_MASK;
+						// NOTE: translation: add byte cast
+						*token += (byte)((1U << 4) - 1);
+						matchCode -= ((1U << 4) - 1);
 						LZ4_write32(op, 0xFFFFFFFF);
 						while (matchCode >= 4 * 255) {
 							op += 4;
@@ -1612,23 +1194,21 @@ namespace IonKiwi.lz4 {
 				if (ip >= mflimitPlusOne) break;
 
 				/* Fill table */
-				LZ4_putPosition(ip - 2, cctx->hashTable, tableType, basePtr);
+				LZ4_putPosition(ip - 2, cctx->hashTable, tableType, baseAddr);
 
 				/* Test next position */
 				if (tableType == tableType_t.byPtr) {
 
-					match = LZ4_getPosition(ip, cctx->hashTable, tableType, basePtr);
-					LZ4_putPosition(ip, cctx->hashTable, tableType, basePtr);
+					match = LZ4_getPosition(ip, cctx->hashTable, tableType, baseAddr);
+					LZ4_putPosition(ip, cctx->hashTable, tableType, baseAddr);
 					if ((match + LZ4_DISTANCE_MAX >= ip)
 						&& (LZ4_read32(match) == LZ4_read32(ip))) { token = op++; *token = 0; goto _next_match; }
 
 				}
-				else {   /* byU32, byU16 */
+				else {   /* byuint, byushort */
 
 					uint h = LZ4_hashPosition(ip, tableType);
-
-					uint current = (uint)(ip - basePtr);
-
+					uint current = (uint)(ip - baseAddr);
 					uint matchIndex = LZ4_getIndexOnHash(h, cctx->hashTable, tableType);
 					Debug.Assert(matchIndex < current);
 					if (dictDirective == dict_directive.usingDictCtx) {
@@ -1640,7 +1220,7 @@ namespace IonKiwi.lz4 {
 							matchIndex += dictDelta;
 						}
 						else {
-							match = basePtr + matchIndex;
+							match = baseAddr + matchIndex;
 							lowLimit = (byte*)source;  /* required for match length counter */
 						}
 					}
@@ -1650,12 +1230,12 @@ namespace IonKiwi.lz4 {
 							lowLimit = dictionary;   /* required for match length counter */
 						}
 						else {
-							match = basePtr + matchIndex;
+							match = baseAddr + matchIndex;
 							lowLimit = (byte*)source;   /* required for match length counter */
 						}
 					}
 					else {   /* single memory segment */
-						match = basePtr + matchIndex;
+						match = baseAddr + matchIndex;
 					}
 					LZ4_putIndexOnHash(current, h, cctx->hashTable, tableType);
 					Debug.Assert(matchIndex < current);
@@ -1682,7 +1262,7 @@ namespace IonKiwi.lz4 {
 			{
 				size_t lastRun = (size_t)(iend - anchor);
 				if ((outputDirective != limitedOutput_directive.notLimited) &&  /* Check output buffer overflow */
-						(op + lastRun + 1 + ((lastRun + 255 - RUN_MASK) / 255) > olimit)) {
+						(op + lastRun + 1 + ((lastRun + 255 - ((1U << (8 - 4)) - 1)) / 255) > olimit)) {
 					if (outputDirective == limitedOutput_directive.fillOutput) {
 						/* adapt lastRun to fill 'dst' */
 						Debug.Assert(olimit >= op);
@@ -1694,56 +1274,169 @@ namespace IonKiwi.lz4 {
 						return 0;   /* cannot compress within `dst` budget. Stored indexes in hash table are nonetheless fine */
 					}
 				}
-				if (lastRun >= RUN_MASK) {
-					size_t accumulator = lastRun - RUN_MASK;
+				if (lastRun >= ((1U << (8 - 4)) - 1)) {
+					size_t accumulator = lastRun - ((1U << (8 - 4)) - 1);
 
-					*op++ = (byte)RUN_MASK << ML_BITS;
+					// NOTE: translation: added byte cast
+					*op++ = (byte)(((1U << (8 - 4)) - 1) << 4);
 					for (; accumulator >= 255; accumulator -= 255) *op++ = 255;
 
 					*op++ = (byte)accumulator;
 				}
 				else {
 
-					*op++ = (byte)(lastRun << ML_BITS);
+					*op++ = (byte)(lastRun << 4);
 				}
-				Unsafe.CopyBlock(op, anchor, (uint)lastRun);
+				Unsafe.CopyBlock(op, anchor, lastRun);
 				ip = anchor + lastRun;
 				op += lastRun;
 			}
 
 			if (outputDirective == limitedOutput_directive.fillOutput) {
-
+				// NOTE: translation: changed char* to byte*
 				*inputConsumed = (int)(((byte*)ip) - source);
 			}
 			//DEBUGLOG(5, "LZ4_compress_generic: compressed %i bytes into %i bytes", inputSize, (int)(((char*)op) - dest));
+			// NOTE: translation: changed char* to byte*
 			result = (int)(((byte*)op) - dest);
 			Debug.Assert(result > 0);
 			return result;
 		}
 
-		private static unsafe int LZ4_compressHC_continue_generic(LZ4_streamHC_u* LZ4_streamHCPtr,
-																						 byte* src, byte* dst,
-																						int* srcSizePtr, int dstCapacity,
-																						limitedOutput_directive limit) {
-			LZ4HC_CCtx_internal* ctxPtr = &LZ4_streamHCPtr->internal_donotuse;
-			//DEBUGLOG(4, "LZ4_compressHC_continue_generic(ctx=%p, src=%p, srcSize=%d)",
-			//						LZ4_streamHCPtr, src, * srcSizePtr);
-			Debug.Assert(ctxPtr != null);
-			/* auto-init if forgotten */
-			if (ctxPtr->basePtr == null) {
-				if (IntPtr.Size == 8)
-					LZ4HC_init_internal64(ctxPtr, (byte*)src);
-				else if (IntPtr.Size == 4)
-					LZ4HC_init_internal32(ctxPtr, (byte*)src);
-				else
-					Debug.Fail("IntPtr.Size == " + IntPtr.Size);
+		private static unsafe void LZ4_wildCopy8(void* dstPtr, void* srcPtr, void* dstEnd) {
+
+			byte* d = (byte*)dstPtr;
+			byte* s = (byte*)srcPtr;
+			byte* e = (byte*)dstEnd;
+
+			do { Unsafe.CopyBlock(d, s, 8); d += 8; s += 8; } while (d < e);
+		}
+
+		private static unsafe uint LZ4_count(byte* pIn, byte* pMatch, byte* pInLimit) {
+
+			byte* pStart = pIn;
+			// NOTE: translation: changed reg_t to if
+			// NOTE: translation: changed STEPSIZE to IntPtr.Size
+			int STEPSIZE = IntPtr.Size;
+			if (IntPtr.Size == 8) {
+				if ((pIn < pInLimit - (STEPSIZE - 1))) {
+					ulong diff = LZ4_read_ARCH64(pMatch) ^ LZ4_read_ARCH64(pIn);
+					if (diff == 0) {
+						pIn += STEPSIZE; pMatch += STEPSIZE;
+					}
+					else {
+						return LZ4_NbCommonBytes64(diff);
+					}
+				}
+
+				while ((pIn < pInLimit - (STEPSIZE - 1))) {
+					ulong diff = LZ4_read_ARCH64(pMatch) ^ LZ4_read_ARCH64(pIn);
+					if (diff == 0) { pIn += STEPSIZE; pMatch += STEPSIZE; continue; }
+					pIn += LZ4_NbCommonBytes64(diff);
+					return (uint)(pIn - pStart);
+				}
+			}
+			else if (IntPtr.Size == 4) {
+				if ((pIn < pInLimit - (STEPSIZE - 1))) {
+					uint diff = LZ4_read_ARCH32(pMatch) ^ LZ4_read_ARCH32(pIn);
+					if (diff == 0) {
+						pIn += STEPSIZE; pMatch += STEPSIZE;
+					}
+					else {
+						return LZ4_NbCommonBytes32(diff);
+					}
+				}
+
+				while ((pIn < pInLimit - (STEPSIZE - 1))) {
+					uint diff = LZ4_read_ARCH32(pMatch) ^ LZ4_read_ARCH32(pIn);
+					if (diff == 0) { pIn += STEPSIZE; pMatch += STEPSIZE; continue; }
+					pIn += LZ4_NbCommonBytes32(diff);
+					return (uint)(pIn - pStart);
+				}
+			}
+			else {
+				Debug.Fail("IntPtr.Size == " + IntPtr.Size);
 			}
 
+			if ((STEPSIZE == 8) && (pIn < (pInLimit - 3)) && (LZ4_read32(pMatch) == LZ4_read32(pIn))) { pIn += 4; pMatch += 4; }
+			if ((pIn < (pInLimit - 1)) && (LZ4_read16(pMatch) == LZ4_read16(pIn))) { pIn += 2; pMatch += 2; }
+			if ((pIn < pInLimit) && (*pMatch == *pIn)) pIn++;
+			return (uint)(pIn - pStart);
+		}
+
+		private static unsafe ushort LZ4_read16(void* memPtr) {
+			ushort val; Unsafe.CopyBlock(&val, memPtr, 2); return val;
+		}
+
+		private static unsafe uint LZ4_NbCommonBytes64(ulong val) {
+			if (BitConverter.IsLittleEndian) {
+				// NOTE: translation: added ulong cast
+				return DeBruijnBytePos64[((ulong)((val & (ulong)-(long)val) * 0x0218A392CDABBD3FUL)) >> 58];
+			}
+			else   /* Big Endian CPU */ {
+				int by32 = 8 * 4;  /* 32 on 64 bits (goal), 16 on 32 bits.
+                Just to avoid some static analyzer complaining about shift by 32 on 32-bits target.
+                Note that this code path is never triggered in 32-bits mode. */
+				uint r;
+				if ((val >> by32) == 0) { r = 4; } else { r = 0; val >>= by32; }
+				if ((val >> 16) == 0) { r += 2; val >>= 8; } else { val >>= 24; }
+				r += (val == 0 ? 1u : 0);
+				return r;
+			}
+		}
+
+		private static unsafe uint LZ4_NbCommonBytes32(uint val) {
+			if (BitConverter.IsLittleEndian) {
+				return DeBruijnBytePos32[((uint)((val & -(int)val) * 0x077CB531U)) >> 27];
+			}
+			else   /* Big Endian CPU */ {
+				uint r;
+				if ((val >> 16) == 0) { r = 2; val >>= 8; } else { r = 0; val >>= 24; }
+				r += (val == 0 ? 1u : 0);
+				return r;
+			}
+		}
+
+		private static unsafe void LZ4_clearHash(uint h, void* tableBase, tableType_t tableType) {
+			switch (tableType) {
+				default: /* fallthrough */
+				case tableType_t.clearedTable: { /* illegal! */ Debug.Fail("clearedTable"); return; }
+				case tableType_t.byPtr: { byte** hashTable = (byte**)tableBase; hashTable[h] = null; return; }
+				case tableType_t.byU32: { uint* hashTable = (uint*)tableBase; hashTable[h] = 0; return; }
+				case tableType_t.byU16: { ushort* hashTable = (ushort*)tableBase; hashTable[h] = 0; return; }
+			}
+		}
+
+		// NOTE: translation: changed char* to byte*
+		internal static unsafe int LZ4_compress_HC_continue(LZ4_streamHC* LZ4_streamHCPtr, byte* src, byte* dst, int srcSize, int dstCapacity) {
+			if (dstCapacity < LZ4_compressBound(srcSize))
+				return LZ4_compressHC_continue_generic(LZ4_streamHCPtr, src, dst, &srcSize, dstCapacity, limitedOutput_directive.limitedOutput);
+			else
+				return LZ4_compressHC_continue_generic(LZ4_streamHCPtr, src, dst, &srcSize, dstCapacity, limitedOutput_directive.notLimited);
+		}
+
+		private static int LZ4_compressBound(int isize) {
+			return ((uint)(isize) > (uint)LZ4_MAX_INPUT_SIZE ? 0 : (isize) + ((isize) / 255) + 16);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_compressHC_continue_generic(LZ4_streamHC* LZ4_streamHCPtr,
+																							 byte* src, byte* dst,
+																							int* srcSizePtr, int dstCapacity,
+																							limitedOutput_directive limit) {
+			LZ4HC_CCtx_internal* ctxPtr = &LZ4_streamHCPtr->internal_donotuse;
+			//DEBUGLOG(4, "LZ4_compressHC_continue_generic(ctx=%p, src=%p, srcSize=%d)",
+			//						LZ4_streamHCPtr, src, *srcSizePtr);
+			Debug.Assert(ctxPtr != null);
+			/* auto-init if forgotten */
+			if (ctxPtr->baseAddr == null) LZ4HC_init_internal(ctxPtr, (byte*)src);
+
 			/* Check overflow */
-			if ((size_t)(ctxPtr->end - ctxPtr->basePtr) > 2 * (1U << 30)) {
-				size_t dictSize = (size_t)(ctxPtr->end - ctxPtr->basePtr) - ctxPtr->dictLimit;
+			if ((size_t)(ctxPtr->end - ctxPtr->baseAddr) > 2 * (1U << 30)) {
+				size_t dictSize = (size_t)(ctxPtr->end - ctxPtr->baseAddr) - ctxPtr->dictLimit;
 				if (dictSize > 64 * (1 << 10)) dictSize = 64 * (1 << 10);
-				LZ4_loadDictHC(LZ4_streamHCPtr, (char*)(ctxPtr->end) - dictSize, (int)dictSize);
+				// NOTE: translation: changed char* to byte*
+				LZ4_loadDictHC(LZ4_streamHCPtr, (byte*)(ctxPtr->end) - dictSize, (int)dictSize);
 			}
 
 			/* Check if blocks follow each other */
@@ -1765,137 +1458,16 @@ namespace IonKiwi.lz4 {
 			return LZ4HC_compress_generic(ctxPtr, src, dst, srcSizePtr, dstCapacity, ctxPtr->compressionLevel, limit);
 		}
 
-		private static unsafe void LZ4HC_init_internal32(LZ4HC_CCtx_internal* hc4, byte* start) {
-			uint startingOffset = (uint)(hc4->end - hc4->basePtr);
-			if (startingOffset > 1 * (1U << 30)) {
-				LZ4HC_clearTables(hc4);
-				startingOffset = 0;
-			}
-			startingOffset += 64 * (1 << 10);
-			hc4->nextToUpdate = (uint)startingOffset;
-			hc4->basePtr = start - startingOffset;
-			hc4->end = start;
-			hc4->dictBase = start - startingOffset;
-			hc4->dictLimit = (uint)startingOffset;
-			hc4->lowLimit = (uint)startingOffset;
-		}
-
-		private static unsafe void LZ4HC_init_internal64(LZ4HC_CCtx_internal* hc4, byte* start) {
-			ulong startingOffset = (ulong)(hc4->end - hc4->basePtr);
-			if (startingOffset > 1 * (1U << 30)) {
-				LZ4HC_clearTables(hc4);
-				startingOffset = 0;
-			}
-			startingOffset += 64 * (1 << 10);
-			hc4->nextToUpdate = (uint)startingOffset;
-			hc4->basePtr = start - startingOffset;
-			hc4->end = start;
-			hc4->dictBase = start - startingOffset;
-			hc4->dictLimit = (uint)startingOffset;
-			hc4->lowLimit = (uint)startingOffset;
-		}
-
-		private static unsafe void LZ4HC_clearTables(LZ4HC_CCtx_internal* hc4) {
-			Unsafe.InitBlock((void*)hc4->hashTable, 0, lz4.LZ4HC_HASHTABLESIZE);
-			Unsafe.InitBlock(hc4->chainTable, 0xFF, lz4.LZ4HC_MAXD);
-		}
-
-		internal static unsafe int LZ4_loadDictHC(LZ4_streamHC_u* LZ4_streamHCPtr,
-
-							char* dictionary, int dictSize) {
-
-			LZ4HC_CCtx_internal* ctxPtr = &LZ4_streamHCPtr->internal_donotuse;
-			//DEBUGLOG(4, "LZ4_loadDictHC(%p, %p, %d)", LZ4_streamHCPtr, dictionary, dictSize);
-			Debug.Assert(LZ4_streamHCPtr != null);
-			if (dictSize > 64 * (1 << 10)) {
-				dictionary += (size_t)dictSize - 64 * (1 << 10);
-				dictSize = 64 * (1 << 10);
-			}
-			/* need a full initialization, there are bad side-effects when using resetFast() */
-			{
-				int cLevel = ctxPtr->compressionLevel;
-				LZ4_initStreamHC(LZ4_streamHCPtr, (uint)sizeof(LZ4_streamHC_u));
-				LZ4_setCompressionLevel(LZ4_streamHCPtr, cLevel);
-			}
-			if (IntPtr.Size == 8)
-				LZ4HC_init_internal64(ctxPtr, (byte*)dictionary);
-			else if (IntPtr.Size == 4)
-				LZ4HC_init_internal32(ctxPtr, (byte*)dictionary);
-			else
-				Debug.Fail("IntPtr.Size == " + IntPtr.Size);
-			ctxPtr->end = (byte*)dictionary + dictSize;
-			if (dictSize >= 4) LZ4HC_Insert(ctxPtr, ctxPtr->end - 3);
-			return dictSize;
-		}
-
-		private static unsafe LZ4_streamHC_u* LZ4_initStreamHC(void* buffer, size_t size) {
-			LZ4_streamHC_u* LZ4_streamHCPtr = (LZ4_streamHC_u*)buffer;
-			if (buffer == null) return null;
-			if (size < (uint)sizeof(LZ4_streamHC_u)) return null;
-			/* if compilation fails here, LZ4_STREAMHCSIZE must be increased */
-			//LZ4_STATIC_ASSERT(sizeof(LZ4HC_CCtx_internal) <= LZ4_STREAMHCSIZE);
-			//DEBUGLOG(4, "LZ4_initStreamHC(%p, %u)", LZ4_streamHCPtr, (unsigned)size);
-			/* end-base will trigger a clearTable on starting compression */
-			if (IntPtr.Size == 8)
-				LZ4_streamHCPtr->internal_donotuse.end = (byte*)-1L;
-			else if (IntPtr.Size == 4)
-				LZ4_streamHCPtr->internal_donotuse.end = (byte*)-1;
-			else
-				Debug.Fail("IntPtr.Size == " + IntPtr.Size);
-			LZ4_streamHCPtr->internal_donotuse.basePtr = null;
-			LZ4_streamHCPtr->internal_donotuse.dictCtx = null;
-			LZ4_streamHCPtr->internal_donotuse.favorDecSpeed = 0;
-			LZ4_streamHCPtr->internal_donotuse.dirty = 0;
-			LZ4_setCompressionLevel(LZ4_streamHCPtr, LZ4HC_CLEVEL_DEFAULT);
-			return LZ4_streamHCPtr;
-		}
-
-		private static unsafe void LZ4_setCompressionLevel(LZ4_streamHC_u* LZ4_streamHCPtr, int compressionLevel) {
-			//DEBUGLOG(5, "LZ4_setCompressionLevel(%p, %d)", LZ4_streamHCPtr, compressionLevel);
-			if (compressionLevel < 1) compressionLevel = LZ4HC_CLEVEL_DEFAULT;
-			if (compressionLevel > LZ4HC_CLEVEL_MAX) compressionLevel = LZ4HC_CLEVEL_MAX;
-			LZ4_streamHCPtr->internal_donotuse.compressionLevel = (short)compressionLevel;
-		}
-
-		private static unsafe void LZ4HC_Insert(LZ4HC_CCtx_internal* hc4, byte* ip) {
-
-			ushort* chainTable = hc4->chainTable;
-			uint* hashTable = hc4->hashTable;
-			byte* basePtr = hc4->basePtr;
-			uint target = (uint)(ip - basePtr);
-			uint idx = hc4->nextToUpdate;
-
-			while (idx < target) {
-				uint h = LZ4HC_hashPtr(basePtr + idx);
-				size_t delta = idx - hashTable[h];
-				if (delta > LZ4_DISTANCE_MAX) delta = LZ4_DISTANCE_MAX;
-				chainTable[(ushort)(idx)] = (ushort)delta;
-				hashTable[h] = idx;
-				idx++;
-			}
-
-			hc4->nextToUpdate = target;
-		}
-
-		private static unsafe uint LZ4HC_hashPtr(void* ptr) {
-			return HASH_FUNCTION(LZ4_read32(ptr));
-		}
-
-		private static unsafe uint HASH_FUNCTION(uint i) {
-			return (((i) * 2654435761U) >> ((MINMATCH * 8) - LZ4HC_HASH_LOG));
-		}
-
 		private static unsafe void LZ4HC_setExternalDict(LZ4HC_CCtx_internal* ctxPtr, byte* newBlock) {
-
 			//DEBUGLOG(4, "LZ4HC_setExternalDict(%p, %p)", ctxPtr, newBlock);
-			if (ctxPtr->end >= ctxPtr->basePtr + ctxPtr->dictLimit + 4)
+			if (ctxPtr->end >= ctxPtr->baseAddr + ctxPtr->dictLimit + 4)
 				LZ4HC_Insert(ctxPtr, ctxPtr->end - 3);   /* Referencing remaining dictionary content */
 
 			/* Only one memory segment for extDict, so any previous extDict is lost at this stage */
 			ctxPtr->lowLimit = ctxPtr->dictLimit;
-			ctxPtr->dictLimit = (uint)(ctxPtr->end - ctxPtr->basePtr);
-			ctxPtr->dictBase = ctxPtr->basePtr;
-			ctxPtr->basePtr = newBlock - ctxPtr->dictLimit;
+			ctxPtr->dictLimit = (uint)(ctxPtr->end - ctxPtr->baseAddr);
+			ctxPtr->dictBase = ctxPtr->baseAddr;
+			ctxPtr->baseAddr = newBlock - ctxPtr->dictLimit;
 			ctxPtr->end = newBlock;
 			ctxPtr->nextToUpdate = ctxPtr->dictLimit;   /* match referencing will resume from there */
 
@@ -1903,15 +1475,16 @@ namespace IonKiwi.lz4 {
 			ctxPtr->dictCtx = null;
 		}
 
+		// NOTE: translation: changed char* to byte*
 		private static unsafe int LZ4HC_compress_generic(
-				LZ4HC_CCtx_internal* ctx,
-				byte* src,
-				byte* dst,
-				int* srcSizePtr,
-				int dstCapacity,
-				int cLevel,
-				limitedOutput_directive limit
-				) {
+					LZ4HC_CCtx_internal* ctx,
+					 byte* src,
+					byte* dst,
+					int* srcSizePtr,
+					int dstCapacity,
+					int cLevel,
+					limitedOutput_directive limit
+					) {
 			if (ctx->dictCtx == null) {
 				return LZ4HC_compress_generic_noDictCtx(ctx, src, dst, srcSizePtr, dstCapacity, cLevel, limit);
 			}
@@ -1920,29 +1493,31 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
+		// NOTE: translation: changed char* to byte*
 		private static unsafe int LZ4HC_compress_generic_noDictCtx(
-				LZ4HC_CCtx_internal* ctx,
-				byte* src,
-				byte* dst,
-				int* srcSizePtr,
-				int dstCapacity,
-				int cLevel,
-				limitedOutput_directive limit
-				) {
+					LZ4HC_CCtx_internal* ctx,
+					 byte* src,
+					byte* dst,
+					int* srcSizePtr,
+					int dstCapacity,
+					int cLevel,
+					limitedOutput_directive limit
+					) {
 			Debug.Assert(ctx->dictCtx == null);
 			return LZ4HC_compress_generic_internal(ctx, src, dst, srcSizePtr, dstCapacity, cLevel, limit, dictCtx_directive.noDictCtx);
 		}
 
+		// NOTE: translation: changed char* to byte*
 		private static unsafe int LZ4HC_compress_generic_dictCtx(
-				LZ4HC_CCtx_internal* ctx,
-				 byte* src,
-				byte* dst,
-				int* srcSizePtr,
-				int dstCapacity,
-				int cLevel,
-				limitedOutput_directive limit
-				) {
-			size_t position = (size_t)(ctx->end - ctx->basePtr) - ctx->lowLimit;
+					LZ4HC_CCtx_internal* ctx,
+					 byte* src,
+					byte* dst,
+					int* srcSizePtr,
+					int dstCapacity,
+					int cLevel,
+					limitedOutput_directive limit
+					) {
+			size_t position = (size_t)(ctx->end - ctx->baseAddr) - ctx->lowLimit;
 			Debug.Assert(ctx->dictCtx != null);
 			if (position >= 64 * (1 << 10)) {
 				ctx->dictCtx = null;
@@ -1959,16 +1534,18 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
+		// NOTE: translation: changed char* to byte*
 		private static unsafe int LZ4HC_compress_generic_internal(
-		LZ4HC_CCtx_internal* ctx,
-		byte* src,
-		byte* dst,
-		int* srcSizePtr,
-		int dstCapacity,
-		int cLevel,
-		 limitedOutput_directive limit,
-		 dictCtx_directive dict
-		) {
+			LZ4HC_CCtx_internal* ctx,
+			 byte* src,
+			byte* dst,
+			int* srcSizePtr,
+			int dstCapacity,
+			int cLevel,
+			 limitedOutput_directive limit,
+			 dictCtx_directive dict
+			) {
+
 			//DEBUGLOG(4, "LZ4HC_compress_generic(ctx=%p, src=%p, srcSize=%d)", ctx, src, *srcSizePtr);
 
 			if (limit == limitedOutput_directive.fillOutput && dstCapacity < 1) return 0;   /* Impossible to store anything */
@@ -2000,19 +1577,19 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
+		// NOTE: translation: changed char* to byte*
 		private static unsafe int LZ4HC_compress_hashChain(
-		LZ4HC_CCtx_internal* ctx,
-		byte* source,
-		byte* dest,
-		int* srcSizePtr,
-		int maxOutputSize,
-		uint maxNbAttempts,
-		 limitedOutput_directive limit,
-
-		 dictCtx_directive dict
-		) {
-
+			LZ4HC_CCtx_internal* ctx,
+			 byte* source,
+			byte* dest,
+			int* srcSizePtr,
+			int maxOutputSize,
+			uint maxNbAttempts,
+			 limitedOutput_directive limit,
+			 dictCtx_directive dict
+			) {
 			int inputSize = *srcSizePtr;
+			// NOTE: translation: changed from int to bool
 			bool patternAnalysis = (maxNbAttempts > 128);   /* levels 9+ */
 
 			byte* ip = (byte*)source;
@@ -2028,7 +1605,7 @@ namespace IonKiwi.lz4 {
 			int ml0, ml, ml2, ml3;
 			byte* start0;
 			byte* ref0;
-			byte* refPtr = null;
+			byte* refAddr = null;
 			byte* start2 = null;
 			byte* ref2 = null;
 			byte* start3 = null;
@@ -2041,16 +1618,18 @@ namespace IonKiwi.lz4 {
 
 			/* Main Loop */
 			while (ip <= mflimit) {
-				ml = LZ4HC_InsertAndFindBestMatch(ctx, ip, matchlimit, &refPtr, (int)maxNbAttempts, patternAnalysis, dict);
-				if (ml < MINMATCH) { ip++; continue; }
+				// NOTE: translation: added cast to int
+				ml = LZ4HC_InsertAndFindBestMatch(ctx, ip, matchlimit, &refAddr, (int)maxNbAttempts, patternAnalysis, dict);
+				if (ml < 4) { ip++; continue; }
 
 				/* saved, in case we would skip too much */
-				start0 = ip; ref0 = refPtr; ml0 = ml;
+				start0 = ip; ref0 = refAddr; ml0 = ml;
 
 			_Search2:
 				if (ip + ml <= mflimit) {
 					ml2 = LZ4HC_InsertAndGetWiderMatch(ctx,
 													ip + ml - 2, ip + 0, matchlimit, ml, &ref2, &start2,
+													// NOTE: translation: added cast to int
 													(int)maxNbAttempts, patternAnalysis, false, dict, HCfavor_e.favorCompressionRatio);
 				}
 				else {
@@ -2059,13 +1638,13 @@ namespace IonKiwi.lz4 {
 
 				if (ml2 == ml) { /* No better match => encode ML1 */
 					optr = op;
-					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend)) goto _dest_overflow;
+					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refAddr, limit, oend)) goto _dest_overflow;
 					continue;
 				}
 
 				if (start0 < ip) {   /* first match was skipped at least once */
 					if (start2 < ip + ml0) {  /* squeezing ML1 between ML0(original ML1) and ML2 */
-						ip = start0; refPtr = ref0; ml = ml0;  /* restore initial ML1 */
+						ip = start0; refAddr = ref0; ml = ml0;  /* restore initial ML1 */
 					}
 				}
 
@@ -2073,7 +1652,7 @@ namespace IonKiwi.lz4 {
 				if ((start2 - ip) < 3) {  /* First Match too small : removed */
 					ml = ml2;
 					ip = start2;
-					refPtr = ref2;
+					refAddr = ref2;
 					goto _Search2;
 				}
 
@@ -2081,11 +1660,11 @@ namespace IonKiwi.lz4 {
 				/* At this stage, we have :
 				*  ml2 > ml1, and
 				*  ip1+3 <= ip2 (usually < ip1+ml1) */
-				if ((start2 - ip) < OPTIMAL_ML) {
+				if ((start2 - ip) < (int)((((1U << 4) - 1) - 1) + 4)) {
 					int correction;
 					int new_ml = ml;
-					if (new_ml > OPTIMAL_ML) new_ml = OPTIMAL_ML;
-					if (ip + new_ml > start2 + ml2 - MINMATCH) new_ml = (int)(start2 - ip) + ml2 - MINMATCH;
+					if (new_ml > (int)((((1U << 4) - 1) - 1) + 4)) new_ml = (int)((((1U << 4) - 1) - 1) + 4);
+					if (ip + new_ml > start2 + ml2 - 4) new_ml = (int)(start2 - ip) + ml2 - 4;
 					correction = new_ml - (int)(start2 - ip);
 					if (correction > 0) {
 						start2 += correction;
@@ -2093,11 +1672,12 @@ namespace IonKiwi.lz4 {
 						ml2 -= correction;
 					}
 				}
-				/* Now, we have start2 = ip+new_ml, with new_ml = min(ml, OPTIMAL_ML=18) */
+				/* Now, we have start2 = ip+new_ml, with new_ml = min(ml, (int)((((1U<<4)-1)-1)+4)=18) */
 
 				if (start2 + ml2 <= mflimit) {
 					ml3 = LZ4HC_InsertAndGetWiderMatch(ctx,
 													start2 + ml2 - 3, start2, matchlimit, ml2, &ref3, &start3,
+													// NOTE: translation: added cast to int
 													(int)maxNbAttempts, patternAnalysis, false, dict, HCfavor_e.favorCompressionRatio);
 				}
 				else {
@@ -2109,7 +1689,7 @@ namespace IonKiwi.lz4 {
 					if (start2 < ip + ml) ml = (int)(start2 - ip);
 					/* Now, encode 2 sequences */
 					optr = op;
-					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend)) goto _dest_overflow;
+					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refAddr, limit, oend)) goto _dest_overflow;
 					ip = start2;
 					optr = op;
 					if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml2, ref2, limit, oend)) goto _dest_overflow;
@@ -2123,7 +1703,7 @@ namespace IonKiwi.lz4 {
 							start2 += correction;
 							ref2 += correction;
 							ml2 -= correction;
-							if (ml2 < MINMATCH) {
+							if (ml2 < 4) {
 								start2 = start3;
 								ref2 = ref3;
 								ml2 = ml3;
@@ -2131,9 +1711,9 @@ namespace IonKiwi.lz4 {
 						}
 
 						optr = op;
-						if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend)) goto _dest_overflow;
+						if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refAddr, limit, oend)) goto _dest_overflow;
 						ip = start3;
-						refPtr = ref3;
+						refAddr = ref3;
 						ml = ml3;
 
 						start0 = start2;
@@ -2154,10 +1734,10 @@ namespace IonKiwi.lz4 {
 				* ip & ref are known; Now decide ml.
 				*/
 				if (start2 < ip + ml) {
-					if ((start2 - ip) < OPTIMAL_ML) {
+					if ((start2 - ip) < (int)((((1U << 4) - 1) - 1) + 4)) {
 						int correction;
-						if (ml > OPTIMAL_ML) ml = OPTIMAL_ML;
-						if (ip + ml > start2 + ml2 - MINMATCH) ml = (int)(start2 - ip) + ml2 - MINMATCH;
+						if (ml > (int)((((1U << 4) - 1) - 1) + 4)) ml = (int)((((1U << 4) - 1) - 1) + 4);
+						if (ip + ml > start2 + ml2 - 4) ml = (int)(start2 - ip) + ml2 - 4;
 						correction = ml - (int)(start2 - ip);
 						if (correction > 0) {
 							start2 += correction;
@@ -2170,10 +1750,10 @@ namespace IonKiwi.lz4 {
 					}
 				}
 				optr = op;
-				if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refPtr, limit, oend)) goto _dest_overflow;
+				if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, refAddr, limit, oend)) goto _dest_overflow;
 
 				/* ML2 becomes ML1 */
-				ip = start2; refPtr = ref2; ml = ml2;
+				ip = start2; refAddr = ref2; ml = ml2;
 
 				/* ML3 becomes ML2 */
 				start2 = start3; ref2 = ref3; ml2 = ml3;
@@ -2186,36 +1766,36 @@ namespace IonKiwi.lz4 {
 			/* Encode Last Literals */
 			{
 				size_t lastRunSize = (size_t)(iend - anchor);  /* literals */
-				size_t litLength = (lastRunSize + 255 - RUN_MASK) / 255;
+				size_t litLength = (lastRunSize + 255 - ((1U << (8 - 4)) - 1)) / 255;
 				size_t totalSize = 1 + litLength + lastRunSize;
 				if (limit == limitedOutput_directive.fillOutput) oend += LASTLITERALS;  /* restore correct value */
 				if (limit != limitedOutput_directive.notLimited && (op + totalSize > oend)) {
 					if (limit == limitedOutput_directive.limitedOutput) return 0;  /* Check output limit */
 																																				 /* adapt lastRunSize to fill 'dest' */
 					lastRunSize = (size_t)(oend - op) - 1;
-					litLength = (lastRunSize + 255 - RUN_MASK) / 255;
+					litLength = (lastRunSize + 255 - ((1U << (8 - 4)) - 1)) / 255;
 					lastRunSize -= litLength;
 				}
 				ip = anchor + lastRunSize;
 
-				if (lastRunSize >= RUN_MASK) {
-					size_t accumulator = lastRunSize - RUN_MASK;
-
-					*op++ = ((byte)RUN_MASK << ML_BITS);
+				if (lastRunSize >= ((1U << (8 - 4)) - 1)) {
+					size_t accumulator = lastRunSize - ((1U << (8 - 4)) - 1);
+					// NOTE: translation: add byte cast
+					*op++ = (byte)(((1U << (8 - 4)) - 1) << 4);
 					for (; accumulator >= 255; accumulator -= 255) *op++ = 255;
-
 					*op++ = (byte)accumulator;
 				}
 				else {
-
-					*op++ = (byte)(lastRunSize << ML_BITS);
+					*op++ = (byte)(lastRunSize << 4);
 				}
-				Unsafe.CopyBlock(op, anchor, (uint)lastRunSize);
+				Unsafe.CopyBlock(op, anchor, lastRunSize);
 				op += lastRunSize;
 			}
 
 			/* End */
+			// NOTE: translation: changed char* to byte*
 			*srcSizePtr = (int)(((byte*)ip) - source);
+			// NOTE: translation: changed char* to byte*
 			return (int)(((byte*)op) - dest);
 
 		_dest_overflow:
@@ -2226,41 +1806,331 @@ namespace IonKiwi.lz4 {
 			return 0;
 		}
 
-		private static unsafe int LZ4HC_InsertAndFindBestMatch(LZ4HC_CCtx_internal* hc4,   /* Index table will be updated */
-																	byte* ip, byte* iLimit,
-																	byte** matchpos,
-																	int maxNbAttempts,
-																	bool patternAnalysis,
-																	dictCtx_directive dict) {
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4HC_compress_optimal(LZ4HC_CCtx_internal* ctx,
+																				 byte* source,
+																				byte* dst,
+																				int* srcSizePtr,
+																				int dstCapacity,
+																				int nbSearches,
+																				size_t sufficient_len,
+																				 limitedOutput_directive limit,
+																				// NOTE: translation: changed from int to bool
+																				bool fullUpdate,
+																				 dictCtx_directive dict,
+																				 HCfavor_e favorDecSpeed) {
+			// NOTE: translation: changed from stackalloc to heap
+			LZ4HC_optimal_t[] opt = new LZ4HC_optimal_t[LZ4_OPT_NUM + TRAILING_LITERALS];   /* ~64 *(1 <<10), which is a bit large for stack... */
 
+			byte* ip = (byte*)source;
+			byte* anchor = ip;
+			byte* iend = ip + *srcSizePtr;
+			byte* mflimit = iend - MFLIMIT;
+			byte* matchlimit = iend - LASTLITERALS;
+			byte* op = (byte*)dst;
+			byte* opSaved = (byte*)dst;
+			byte* oend = op + dstCapacity;
+
+			/* init */
+			//DEBUGLOG(5, "LZ4HC_compress_optimal(dst=%p, dstCapa=%u)", dst, (uint)dstCapacity);
+			*srcSizePtr = 0;
+			if (limit == limitedOutput_directive.fillOutput) oend -= LASTLITERALS;   /* Hack for support LZ4 format restriction */
+			if (sufficient_len >= LZ4_OPT_NUM) sufficient_len = LZ4_OPT_NUM - 1;
+
+			/* Main Loop */
+			Debug.Assert(ip - anchor < LZ4_MAX_INPUT_SIZE);
+			while (ip <= mflimit) {
+				int llen = (int)(ip - anchor);
+				int best_mlen, best_off;
+				int cur, last_match_pos = 0;
+
+				LZ4HC_match_t firstMatch = LZ4HC_FindLongerMatch(ctx, ip, matchlimit, 4 - 1, nbSearches, dict, favorDecSpeed);
+				if (firstMatch.len == 0) { ip++; continue; }
+
+				if ((size_t)firstMatch.len > sufficient_len) {
+					/* good enough solution : immediate encoding */
+					int firstML = firstMatch.len;
+					byte* matchPos = ip - firstMatch.off;
+					opSaved = op;
+					if (LZ4HC_encodeSequence(&ip, &op, &anchor, firstML, matchPos, limit, oend))   /* updates ip, op and anchor */
+						goto _dest_overflow;
+					continue;
+				}
+
+				/* set prices for first positions (literals) */
+				{
+					int rPos;
+					for (rPos = 0; rPos < 4; rPos++) {
+						int cost = LZ4HC_literalsPrice(llen + rPos);
+						opt[rPos].mlen = 1;
+						opt[rPos].off = 0;
+						opt[rPos].litlen = llen + rPos;
+						opt[rPos].price = cost;
+						//DEBUGLOG(7, "rPos:%3i => price:%3i (litlen=%i) -- initial setup",
+						//						rPos, cost, opt[rPos].litlen);
+					}
+				}
+				/* set prices using initial match */
+				{
+					int mlen = 4;
+					int matchML = firstMatch.len;   /* necessarily < sufficient_len < LZ4_OPT_NUM */
+					int offset = firstMatch.off;
+					Debug.Assert(matchML < LZ4_OPT_NUM);
+					for (; mlen <= matchML; mlen++) {
+						int cost = LZ4HC_sequencePrice(llen, mlen);
+						opt[mlen].mlen = mlen;
+						opt[mlen].off = offset;
+						opt[mlen].litlen = llen;
+						opt[mlen].price = cost;
+						//DEBUGLOG(7, "rPos:%3i => price:%3i (matchlen=%i) -- initial setup",
+						//						mlen, cost, mlen);
+					}
+				}
+				last_match_pos = firstMatch.len;
+				{
+					int addLit;
+					for (addLit = 1; addLit <= TRAILING_LITERALS; addLit++) {
+						opt[last_match_pos + addLit].mlen = 1; /* literal */
+						opt[last_match_pos + addLit].off = 0;
+						opt[last_match_pos + addLit].litlen = addLit;
+						opt[last_match_pos + addLit].price = opt[last_match_pos].price + LZ4HC_literalsPrice(addLit);
+						//DEBUGLOG(7, "rPos:%3i => price:%3i (litlen=%i) -- initial setup",
+						//						last_match_pos + addLit, opt[last_match_pos + addLit].price, addLit);
+					}
+				}
+
+				/* check further positions */
+				for (cur = 1; cur < last_match_pos; cur++) {
+					byte* curPtr = ip + cur;
+					LZ4HC_match_t newMatch;
+
+					if (curPtr > mflimit) break;
+					//DEBUGLOG(7, "rPos:%u[%u] vs [%u]%u",
+					//				cur, opt[cur].price, opt[cur + 1].price, cur + 1);
+					if (fullUpdate) {
+						/* not useful to search here if next position has same (or lower) cost */
+						if ((opt[cur + 1].price <= opt[cur].price)
+							/* in some cases, next position has same cost, but cost rises sharply after, so a small match would still be beneficial */
+							&& (opt[cur + 4].price < opt[cur].price + 3/*min seq price*/))
+							continue;
+					}
+					else {
+						/* not useful to search here if next position has same (or lower) cost */
+						if (opt[cur + 1].price <= opt[cur].price) continue;
+					}
+
+					//DEBUGLOG(7, "search at rPos:%u", cur);
+					if (fullUpdate)
+						newMatch = LZ4HC_FindLongerMatch(ctx, curPtr, matchlimit, 4 - 1, nbSearches, dict, favorDecSpeed);
+					else
+						/* only test matches of minimum length; slightly faster, but misses a few bytes */
+						newMatch = LZ4HC_FindLongerMatch(ctx, curPtr, matchlimit, last_match_pos - cur, nbSearches, dict, favorDecSpeed);
+					if (newMatch.len == 0) continue;
+
+					if (((size_t)newMatch.len > sufficient_len)
+						|| (newMatch.len + cur >= LZ4_OPT_NUM)) {
+						/* immediate encoding */
+						best_mlen = newMatch.len;
+						best_off = newMatch.off;
+						last_match_pos = cur + 1;
+						goto encode;
+					}
+
+					/* before match : set price with literals at beginning */
+					{
+						int baseLitlen = opt[cur].litlen;
+						int litlen;
+						for (litlen = 1; litlen < 4; litlen++) {
+							int price = opt[cur].price - LZ4HC_literalsPrice(baseLitlen) + LZ4HC_literalsPrice(baseLitlen + litlen);
+							int pos = cur + litlen;
+							if (price < opt[pos].price) {
+								opt[pos].mlen = 1; /* literal */
+								opt[pos].off = 0;
+								opt[pos].litlen = baseLitlen + litlen;
+								opt[pos].price = price;
+								//DEBUGLOG(7, "rPos:%3i => price:%3i (litlen=%i)",
+								//						pos, price, opt[pos].litlen);
+							}
+						}
+					}
+
+					/* set prices using match at position = cur */
+					{
+						int matchML = newMatch.len;
+						int ml = 4;
+
+						Debug.Assert(cur + newMatch.len < LZ4_OPT_NUM);
+						for (; ml <= matchML; ml++) {
+							int pos = cur + ml;
+							int offset = newMatch.off;
+							int price;
+							int ll;
+							//DEBUGLOG(7, "testing price rPos %i (last_match_pos=%i)",
+							//						pos, last_match_pos);
+							if (opt[cur].mlen == 1) {
+								ll = opt[cur].litlen;
+								price = ((cur > ll) ? opt[cur - ll].price : 0)
+											+ LZ4HC_sequencePrice(ll, ml);
+							}
+							else {
+								ll = 0;
+								price = opt[cur].price + LZ4HC_sequencePrice(0, ml);
+							}
+
+							Debug.Assert((uint)favorDecSpeed <= 1);
+							if (pos > last_match_pos + TRAILING_LITERALS
+							 || price <= opt[pos].price - (int)favorDecSpeed) {
+								//DEBUGLOG(7, "rPos:%3i => price:%3i (matchlen=%i)",
+								//						pos, price, ml);
+								Debug.Assert(pos < LZ4_OPT_NUM);
+								if ((ml == matchML)  /* last pos of last match */
+									&& (last_match_pos < pos))
+									last_match_pos = pos;
+								opt[pos].mlen = ml;
+								opt[pos].off = offset;
+								opt[pos].litlen = ll;
+								opt[pos].price = price;
+							}
+						}
+					}
+					/* complete following positions with literals */
+					{
+						int addLit;
+						for (addLit = 1; addLit <= TRAILING_LITERALS; addLit++) {
+							opt[last_match_pos + addLit].mlen = 1; /* literal */
+							opt[last_match_pos + addLit].off = 0;
+							opt[last_match_pos + addLit].litlen = addLit;
+							opt[last_match_pos + addLit].price = opt[last_match_pos].price + LZ4HC_literalsPrice(addLit);
+							//DEBUGLOG(7, "rPos:%3i => price:%3i (litlen=%i)", last_match_pos + addLit, opt[last_match_pos + addLit].price, addLit);
+						}
+					}
+				}  /* for (cur = 1; cur <= last_match_pos; cur++) */
+
+				Debug.Assert(last_match_pos < LZ4_OPT_NUM + TRAILING_LITERALS);
+				best_mlen = opt[last_match_pos].mlen;
+				best_off = opt[last_match_pos].off;
+				cur = last_match_pos - best_mlen;
+
+			encode: /* cur, last_match_pos, best_mlen, best_off must be set */
+				Debug.Assert(cur < LZ4_OPT_NUM);
+				Debug.Assert(last_match_pos >= 1);  /* == 1 when only one candidate */
+																						//DEBUGLOG(6, "reverse traversal, looking for shortest path (last_match_pos=%i)", last_match_pos);
+				{
+					int candidate_pos = cur;
+					int selected_matchLength = best_mlen;
+					int selected_offset = best_off;
+					while (true) {  /* from end to beginning */
+						int next_matchLength = opt[candidate_pos].mlen;  /* can be 1, means literal */
+						int next_offset = opt[candidate_pos].off;
+						//DEBUGLOG(7, "pos %i: sequence length %i", candidate_pos, selected_matchLength);
+						opt[candidate_pos].mlen = selected_matchLength;
+						opt[candidate_pos].off = selected_offset;
+						selected_matchLength = next_matchLength;
+						selected_offset = next_offset;
+						if (next_matchLength > candidate_pos) break; /* last match elected, first match to encode */
+						Debug.Assert(next_matchLength > 0);  /* can be 1, means literal */
+						candidate_pos -= next_matchLength;
+					}
+				}
+
+				/* encode all recorded sequences in order */
+				{
+					int rPos = 0;  /* relative position (to ip) */
+					while (rPos < last_match_pos) {
+						int ml = opt[rPos].mlen;
+						int offset = opt[rPos].off;
+						if (ml == 1) { ip++; rPos++; continue; }  /* literal; note: can end up with several literals, in which case, skip them */
+						rPos += ml;
+						Debug.Assert(ml >= 4);
+						Debug.Assert((offset >= 1) && (offset <= LZ4_DISTANCE_MAX));
+						opSaved = op;
+						if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, ip - offset, limit, oend))   /* updates ip, op and anchor */
+							goto _dest_overflow;
+					}
+				}
+			}  /* while (ip <= mflimit) */
+
+		_last_literals:
+			/* Encode Last Literals */
+			{
+				size_t lastRunSize = (size_t)(iend - anchor);  /* literals */
+				size_t litLength = (lastRunSize + 255 - ((1U << (8 - 4)) - 1)) / 255;
+				size_t totalSize = 1 + litLength + lastRunSize;
+				if (limit == limitedOutput_directive.fillOutput) oend += LASTLITERALS;  /* restore correct value */
+				if (limit != limitedOutput_directive.notLimited && (op + totalSize > oend)) {
+					if (limit == limitedOutput_directive.limitedOutput) return 0;  /* Check output limit */
+																																				 /* adapt lastRunSize to fill 'dst' */
+					lastRunSize = (size_t)(oend - op) - 1;
+					litLength = (lastRunSize + 255 - ((1U << (8 - 4)) - 1)) / 255;
+					lastRunSize -= litLength;
+				}
+				ip = anchor + lastRunSize;
+
+				if (lastRunSize >= ((1U << (8 - 4)) - 1)) {
+					size_t accumulator = lastRunSize - ((1U << (8 - 4)) - 1);
+					// NOTE: translation: add byte cast
+					*op++ = (byte)(((1U << (8 - 4)) - 1) << 4);
+					for (; accumulator >= 255; accumulator -= 255) *op++ = 255;
+					*op++ = (byte)accumulator;
+				}
+				else {
+					*op++ = (byte)(lastRunSize << 4);
+				}
+				Unsafe.CopyBlock(op, anchor, lastRunSize);
+				op += lastRunSize;
+			}
+
+			/* End */
+			// NOTE: translation: changed char* to byte*
+			*srcSizePtr = (int)(((byte*)ip) - source);
+			// NOTE: translation: changed char* to byte*
+			return (int)((byte*)op - dst);
+
+		_dest_overflow:
+			if (limit == limitedOutput_directive.fillOutput) {
+				op = opSaved;  /* restore correct out pointer */
+				goto _last_literals;
+			}
+			return 0;
+		}
+
+		private static unsafe int LZ4HC_InsertAndFindBestMatch(LZ4HC_CCtx_internal* hc4,   /* Index table will be updated */
+																			byte* ip, byte* iLimit,
+																			byte** matchpos,
+																			int maxNbAttempts,
+																			// NOTE: translation: changed int to bool
+																			bool patternAnalysis,
+																			dictCtx_directive dict) {
 			byte* uselessPtr = ip;
 			/* note : LZ4HC_InsertAndGetWiderMatch() is able to modify the starting position of a match (*startpos),
 			 * but this won't be the case here, as we define iLowLimit==ip,
 			 * so LZ4HC_InsertAndGetWiderMatch() won't be allowed to search past ip */
-			return LZ4HC_InsertAndGetWiderMatch(hc4, ip, ip, iLimit, MINMATCH - 1, matchpos, &uselessPtr, maxNbAttempts, patternAnalysis, false /*chainSwap*/, dict, HCfavor_e.favorCompressionRatio);
+			return LZ4HC_InsertAndGetWiderMatch(hc4, ip, ip, iLimit, 4 - 1, matchpos, &uselessPtr, maxNbAttempts, patternAnalysis, false /*chainSwap*/, dict, HCfavor_e.favorCompressionRatio);
 		}
 
-		private static unsafe int LZ4HC_InsertAndGetWiderMatch(
-		LZ4HC_CCtx_internal* hc4,
-		 byte* ip,
-		 byte* iLowLimit,
-		 byte* iHighLimit,
-		int longest,
-		 byte** matchpos,
-		 byte** startpos,
-		 int maxNbAttempts,
-		 bool patternAnalysis,
-		 bool chainSwap,
-		 dictCtx_directive dict,
-		 HCfavor_e favorDecSpeed) {
-
+		private static unsafe int
+		LZ4HC_InsertAndGetWiderMatch(
+				LZ4HC_CCtx_internal* hc4,
+				 byte* ip,
+				 byte* iLowLimit,
+				 byte* iHighLimit,
+				int longest,
+				 byte** matchpos,
+				 byte** startpos,
+				 int maxNbAttempts,
+				 // NOTE: translation: changed from int to bool
+				 bool patternAnalysis,
+				 // NOTE: translation: changed from int to bool
+				 bool chainSwap,
+				 dictCtx_directive dict,
+				 HCfavor_e favorDecSpeed) {
 			ushort* chainTable = hc4->chainTable;
 			uint* HashTable = hc4->hashTable;
 			LZ4HC_CCtx_internal* dictCtx = hc4->dictCtx;
-			byte* basePtr = hc4->basePtr;
+			byte* baseAddr = hc4->baseAddr;
 			uint dictLimit = hc4->dictLimit;
-			byte* lowPrefixPtr = basePtr + dictLimit;
-			uint ipIndex = (uint)(ip - basePtr);
+			byte* lowPrefixPtr = baseAddr + dictLimit;
+			uint ipIndex = (uint)(ip - baseAddr);
 			uint lowestMatchIndex = (hc4->lowLimit + (LZ4_DISTANCE_MAX + 1) > ipIndex) ? hc4->lowLimit : ipIndex - LZ4_DISTANCE_MAX;
 			byte* dictBase = hc4->dictBase;
 			int lookBackLength = (int)(ip - iLowLimit);
@@ -2286,20 +2156,18 @@ namespace IonKiwi.lz4 {
 					/* do nothing */
 				}
 				else if (matchIndex >= dictLimit) {   /* within current Prefix */
-					byte* matchPtr = basePtr + matchIndex;
+					byte* matchPtr = baseAddr + matchIndex;
 					Debug.Assert(matchPtr >= lowPrefixPtr);
 					Debug.Assert(matchPtr < ip);
 					Debug.Assert(longest >= 1);
 					if (LZ4_read16(iLowLimit + longest - 1) == LZ4_read16(matchPtr - lookBackLength + longest - 1)) {
 						if (LZ4_read32(matchPtr) == pattern) {
 							int back = lookBackLength != 0 ? LZ4HC_countBack(ip, matchPtr, iLowLimit, lowPrefixPtr) : 0;
-							matchLength = MINMATCH + (int)LZ4_count(ip + MINMATCH, matchPtr + MINMATCH, iHighLimit);
+							matchLength = 4 + (int)LZ4_count(ip + 4, matchPtr + 4, iHighLimit);
 							matchLength -= back;
 							if (matchLength > longest) {
 								longest = matchLength;
-
 								*matchpos = matchPtr + back;
-
 								*startpos = ip + back;
 							}
 						}
@@ -2312,16 +2180,15 @@ namespace IonKiwi.lz4 {
 						int back = 0;
 						byte* vLimit = ip + (dictLimit - matchIndex);
 						if (vLimit > iHighLimit) vLimit = iHighLimit;
-						matchLength = (int)LZ4_count(ip + MINMATCH, matchPtr + MINMATCH, vLimit) + MINMATCH;
+						matchLength = (int)LZ4_count(ip + 4, matchPtr + 4, vLimit) + 4;
 						if ((ip + matchLength == vLimit) && (vLimit < iHighLimit))
+							// NOTE: translation: add int cast
 							matchLength += (int)LZ4_count(ip + matchLength, lowPrefixPtr, iHighLimit);
 						back = lookBackLength != 0 ? LZ4HC_countBack(ip, matchPtr, iLowLimit, dictStart) : 0;
 						matchLength -= back;
 						if (matchLength > longest) {
 							longest = matchLength;
-
-							*matchpos = basePtr + matchIndex + back;   /* virtual pos, relative to ip, to retrieve offset */
-
+							*matchpos = baseAddr + matchIndex + back;   /* virtual pos, relative to ip, to retrieve offset */
 							*startpos = ip + back;
 						}
 					}
@@ -2332,7 +2199,7 @@ namespace IonKiwi.lz4 {
 					if (matchIndex + (uint)longest <= ipIndex) {
 						int kTrigger = 4;
 						uint distanceToNextMatch = 1;
-						int end = longest - MINMATCH + 1;
+						int end = longest - 4 + 1;
 						int step = 1;
 						int accel = 1 << kTrigger;
 						int pos;
@@ -2362,6 +2229,7 @@ namespace IonKiwi.lz4 {
 							if (((pattern & 0xFFFF) == (pattern >> 16))
 								& ((pattern & 0xFF) == (pattern >> 24))) {
 								repeat = repeat_state_e.rep_confirmed;
+								// NOTE: translation: changed sizeof(pattern) to 4
 								srcPatternLength = LZ4HC_countPattern(ip + 4, iHighLimit, pattern) + 4;
 							}
 							else {
@@ -2370,11 +2238,13 @@ namespace IonKiwi.lz4 {
 						}
 						if ((repeat == repeat_state_e.rep_confirmed) && (matchCandidateIdx >= lowestMatchIndex)
 							&& LZ4HC_protectDictEnd(dictLimit, matchCandidateIdx)) {
+							// NOTE: translation: changed int to bool
 							bool extDict = matchCandidateIdx < dictLimit;
-							byte* matchPtr = (extDict ? dictBase : basePtr) + matchCandidateIdx;
+							byte* matchPtr = (extDict ? dictBase : baseAddr) + matchCandidateIdx;
 							if (LZ4_read32(matchPtr) == pattern) {  /* good candidate */
 								byte* dictStart = dictBase + hc4->lowLimit;
 								byte* iLimit = extDict ? dictBase + dictLimit : iHighLimit;
+								// NOTE: translation: changed sizeof(pattern) to 4
 								size_t forwardPatternLength = LZ4HC_countPattern(matchPtr + 4, iLimit, pattern) + 4;
 								if (extDict && matchPtr + forwardPatternLength == iLimit) {
 									uint rotatedPattern = LZ4HC_rotatePattern(forwardPatternLength, pattern);
@@ -2415,13 +2285,11 @@ namespace IonKiwi.lz4 {
 											if (lookBackLength == 0) {  /* no back possible */
 												size_t maxML = Math.Min(currentSegmentLength, srcPatternLength);
 												if ((size_t)longest < maxML) {
-													Debug.Assert(basePtr + matchIndex < ip);
-													if (ip - (basePtr + matchIndex) > LZ4_DISTANCE_MAX) break;
+													Debug.Assert(baseAddr + matchIndex < ip);
+													if (ip - (baseAddr + matchIndex) > LZ4_DISTANCE_MAX) break;
 													Debug.Assert(maxML < 2 * (1U << 30));
 													longest = (int)maxML;
-
-													*matchpos = basePtr + matchIndex;   /* virtual pos, relative to ip, to retrieve offset */
-
+													*matchpos = baseAddr + matchIndex;   /* virtual pos, relative to ip, to retrieve offset */
 													*startpos = ip;
 												}
 												{
@@ -2447,26 +2315,24 @@ namespace IonKiwi.lz4 {
 			if (dict == dictCtx_directive.usingDictCtxHc
 				&& nbAttempts != 0
 				&& ipIndex - lowestMatchIndex < LZ4_DISTANCE_MAX) {
-				size_t dictEndOffset = (size_t)(dictCtx->end - dictCtx->basePtr);
+				size_t dictEndOffset = (size_t)(dictCtx->end - dictCtx->baseAddr);
 				uint dictMatchIndex = dictCtx->hashTable[LZ4HC_hashPtr(ip)];
 				Debug.Assert(dictEndOffset <= 1 * (1U << 30));
 				matchIndex = dictMatchIndex + lowestMatchIndex - (uint)dictEndOffset;
 				while (ipIndex - matchIndex <= LZ4_DISTANCE_MAX && nbAttempts-- != 0) {
-					byte* matchPtr = dictCtx->basePtr + dictMatchIndex;
+					byte* matchPtr = dictCtx->baseAddr + dictMatchIndex;
 
 					if (LZ4_read32(matchPtr) == pattern) {
 						int mlt;
 						int back = 0;
 						byte* vLimit = ip + (dictEndOffset - dictMatchIndex);
 						if (vLimit > iHighLimit) vLimit = iHighLimit;
-						mlt = (int)LZ4_count(ip + MINMATCH, matchPtr + MINMATCH, vLimit) + MINMATCH;
-						back = lookBackLength != 0 ? LZ4HC_countBack(ip, matchPtr, iLowLimit, dictCtx->basePtr + dictCtx->dictLimit) : 0;
+						mlt = (int)LZ4_count(ip + 4, matchPtr + 4, vLimit) + 4;
+						back = lookBackLength != 0 ? LZ4HC_countBack(ip, matchPtr, iLowLimit, dictCtx->baseAddr + dictCtx->dictLimit) : 0;
 						mlt -= back;
 						if (mlt > longest) {
 							longest = mlt;
-
-							*matchpos = basePtr + matchIndex + back;
-
+							*matchpos = baseAddr + matchIndex + back;
 							*startpos = ip + back;
 						}
 					}
@@ -2483,7 +2349,7 @@ namespace IonKiwi.lz4 {
 		}
 
 		private static unsafe int LZ4HC_countBack(byte* ip, byte* match,
-										 byte* iMin, byte* mMin) {
+												 byte* iMin, byte* mMin) {
 			int back = 0;
 			int min = (int)Math.Max(iMin - ip, mMin - match);
 			Debug.Assert(min <= 0);
@@ -2495,19 +2361,9 @@ namespace IonKiwi.lz4 {
 			return back;
 		}
 
+		// NOTE: translation: changed int to bool
 		private static unsafe bool LZ4HC_protectDictEnd(uint dictLimit, uint matchIndex) {
-			return (uint)((dictLimit - 1) - matchIndex) >= 3;
-		}
-
-		private static unsafe uint LZ4HC_rotatePattern(size_t rotate, uint pattern) {
-			size_t bitsToRotate = (rotate & (4 - 1)) << 3;
-			if (bitsToRotate == 0)
-				return pattern;
-			return LZ4HC_rotl32(pattern, (int)bitsToRotate);
-		}
-
-		private static uint LZ4HC_rotl32(uint x, int r) {
-			return ((x << r) | (x >> (32 - r)));
+			return ((uint)((dictLimit - 1) - matchIndex) >= 3);
 		}
 
 		private static unsafe uint LZ4HC_reverseCountPattern(byte* ip, byte* iLow, uint pattern) {
@@ -2527,8 +2383,18 @@ namespace IonKiwi.lz4 {
 			return (uint)(iStart - ip);
 		}
 
-		private static unsafe uint LZ4HC_countPattern(byte* ip, byte* iEnd, uint pattern32) {
+		private static unsafe uint LZ4HC_rotatePattern(size_t rotate, uint pattern) {
+			// NOTE: translation: change sizeof(pattern) to 4
+			size_t bitsToRotate = (rotate & (4 - 1)) << 3;
+			if (bitsToRotate == 0)
+				return pattern;
+			return LZ4HC_rotl32(pattern, (int)bitsToRotate);
+		}
 
+		private static uint LZ4HC_rotl32(uint x, int r) { return ((x << r) | (x >> (32 - r))); }
+
+		private static unsafe uint LZ4HC_countPattern(byte* ip, byte* iEnd, uint pattern32) {
+			// NOTE: translation: changed reg_t to if
 			if (IntPtr.Size == 8) {
 				byte* iStart = ip;
 				ulong pattern = (ulong)pattern32 + (((ulong)pattern32) << 32);
@@ -2591,65 +2457,34 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		private static unsafe uint LZ4HC_countPattern64(byte* ip, byte* iEnd, uint pattern32) {
-
-			byte* iStart = ip;
-			ulong pattern = (ulong)pattern32 + (((ulong)pattern32) << 32);
-
-			while ((ip < iEnd - (8 - 1))) {
-				ulong diff = LZ4_read_ARCH64(ip) ^ pattern;
-				if (diff == 0) { ip += 8; continue; }
-				ip += LZ4_NbCommonBytes64(diff);
-				return (uint)(ip - iStart);
-			}
-
-			if (BitConverter.IsLittleEndian) {
-				ulong patternByte = pattern;
-				while ((ip < iEnd) && (*ip == (byte)patternByte)) {
-					ip++; patternByte >>= 8;
-				}
-			}
-			else {  /* big endian */
-				uint bitOffset = (8 * 8) - 8;
-				while (ip < iEnd) {
-					byte byteValue = (byte)(pattern >> (int)bitOffset);
-					if (*ip != byteValue) break;
-					ip++; bitOffset -= 8;
-				}
-			}
-
-			return (uint)(ip - iStart);
-		}
-
+		// NOTE: tranlsation: changed from int to bool
 		private static unsafe bool LZ4HC_encodeSequence(
-		 byte** ip,
-		byte** op,
-		 byte** anchor,
-		int matchLength,
-		 byte* match,
-		limitedOutput_directive limit,
-		byte* oend) {
-
+				 byte** ip,
+				byte** op,
+				 byte** anchor,
+				int matchLength,
+				 byte* match,
+				limitedOutput_directive limit,
+				byte* oend) {
 			size_t length;
 			byte* token = (*op)++;
 
 			/* Encode Literal length */
 			length = (size_t)(*ip - *anchor);
-			if ((limit != 0) && ((*op + (length / 255) + length + (2 + 1 + LASTLITERALS)) > oend)) return true;   /* Check output limit */
-			if (length >= RUN_MASK) {
-				size_t len = length - RUN_MASK;
-				*token = ((byte)RUN_MASK << ML_BITS);
+			if ((limit != limitedOutput_directive.notLimited) && ((*op + (length / 255) + length + (2 + 1 + LASTLITERALS)) > oend)) return true;   /* Check output limit */
+			if (length >= ((1U << (8 - 4)) - 1)) {
+				size_t len = length - ((1U << (8 - 4)) - 1);
+				// NOTE: translation: add byte cast
+				*token = (byte)(((1U << (8 - 4)) - 1) << 4);
 				for (; len >= 255; len -= 255) *(*op)++ = 255;
 				*(*op)++ = (byte)len;
 			}
 			else {
-
-				*token = (byte)(length << ML_BITS);
+				*token = (byte)(length << 4);
 			}
 
 			/* Copy Literals */
 			LZ4_wildCopy8(*op, *anchor, (*op) + length);
-
 			*op += length;
 
 			/* Encode Offset */
@@ -2657,345 +2492,34 @@ namespace IonKiwi.lz4 {
 			LZ4_writeLE16(*op, (ushort)(*ip - match)); *op += 2;
 
 			/* Encode MatchLength */
-			Debug.Assert(matchLength >= MINMATCH);
-			length = (size_t)matchLength - MINMATCH;
-			if ((limit != 0) && (*op + (length / 255) + (1 + LASTLITERALS) > oend)) return true;   /* Check output limit */
-			if (length >= ML_MASK) {
-
-				*token += (byte)ML_MASK;
-				length -= ML_MASK;
+			Debug.Assert(matchLength >= 4);
+			length = (size_t)matchLength - 4;
+			if ((limit != limitedOutput_directive.notLimited) && (*op + (length / 255) + (1 + LASTLITERALS) > oend)) return true;   /* Check output limit */
+			if (length >= ((1U << 4) - 1)) {
+				// NOTE: translation: add byte cast
+				*token += (byte)((1U << 4) - 1);
+				length -= ((1U << 4) - 1);
 				for (; length >= 510; length -= 510) { *(*op)++ = 255; *(*op)++ = 255; }
 				if (length >= 255) { length -= 255; *(*op)++ = 255; }
-
 				*(*op)++ = (byte)length;
 			}
 			else {
-
 				*token += (byte)(length);
 			}
 
 			/* Prepare next loop */
 			*ip += matchLength;
-
 			*anchor = *ip;
 
 			return false;
 		}
 
-		private static unsafe int LZ4HC_compress_optimal(LZ4HC_CCtx_internal* ctx,
-																		byte* source,
-																		byte* dst,
-																		int* srcSizePtr,
-																		int dstCapacity,
-																		int nbSearches,
-																		size_t sufficient_len,
-																		 limitedOutput_directive limit,
-																		bool fullUpdate,
-																		 dictCtx_directive dict,
-																		 HCfavor_e favorDecSpeed) {
-			LZ4HC_optimal_t[] opt = new LZ4HC_optimal_t[LZ4_OPT_NUM + TRAILING_LITERALS];   /* ~64 KB, which is a bit large for stack... */
-
-			byte* ip = (byte*)source;
-			byte* anchor = ip;
-			byte* iend = ip + *srcSizePtr;
-			byte* mflimit = iend - MFLIMIT;
-			byte* matchlimit = iend - LASTLITERALS;
-			byte* op = (byte*)dst;
-			byte* opSaved = (byte*)dst;
-			byte* oend = op + dstCapacity;
-
-			/* init */
-			//DEBUGLOG(5, "LZ4HC_compress_optimal(dst=%p, dstCapa=%u)", dst, (uint)dstCapacity);
-			*srcSizePtr = 0;
-			if (limit == limitedOutput_directive.fillOutput) oend -= LASTLITERALS;   /* Hack for support LZ4 format restriction */
-			if (sufficient_len >= LZ4_OPT_NUM) sufficient_len = LZ4_OPT_NUM - 1;
-
-			/* Main Loop */
-			Debug.Assert(ip - anchor < LZ4_MAX_INPUT_SIZE);
-			while (ip <= mflimit) {
-				int llen = (int)(ip - anchor);
-				int best_mlen, best_off;
-				int cur, last_match_pos = 0;
-
-				LZ4HC_match_t firstMatch = LZ4HC_FindLongerMatch(ctx, ip, matchlimit, MINMATCH - 1, nbSearches, dict, favorDecSpeed);
-				if (firstMatch.len == 0) { ip++; continue; }
-
-				if ((size_t)firstMatch.len > sufficient_len) {
-					/* good enough solution : immediate encoding */
-					int firstML = firstMatch.len;
-					byte* matchPos = ip - firstMatch.off;
-					opSaved = op;
-					if (LZ4HC_encodeSequence(&ip, &op, &anchor, firstML, matchPos, limit, oend))   /* updates ip, op and anchor */
-						goto _dest_overflow;
-					continue;
-				}
-
-				/* set prices for first positions (literals) */
-				{
-					int rPos;
-					for (rPos = 0; rPos < MINMATCH; rPos++) {
-						int cost = LZ4HC_literalsPrice(llen + rPos);
-						opt[rPos].mlen = 1;
-						opt[rPos].off = 0;
-						opt[rPos].litlen = llen + rPos;
-						opt[rPos].price = cost;
-						//DEBUGLOG(7, "rPos:%3i => price:%3i (litlen=%i) -- initial setup",
-						//						rPos, cost, opt[rPos].litlen);
-					}
-				}
-				/* set prices using initial match */
-				{
-					int mlen = MINMATCH;
-					int matchML = firstMatch.len;   /* necessarily < sufficient_len < LZ4_OPT_NUM */
-					int offset = firstMatch.off;
-					Debug.Assert(matchML < LZ4_OPT_NUM);
-					for (; mlen <= matchML; mlen++) {
-						int cost = LZ4HC_sequencePrice(llen, mlen);
-						opt[mlen].mlen = mlen;
-						opt[mlen].off = offset;
-						opt[mlen].litlen = llen;
-						opt[mlen].price = cost;
-						//DEBUGLOG(7, "rPos:%3i => price:%3i (matchlen=%i) -- initial setup",
-						//						mlen, cost, mlen);
-					}
-				}
-				last_match_pos = firstMatch.len;
-				{
-					int addLit;
-					for (addLit = 1; addLit <= TRAILING_LITERALS; addLit++) {
-						opt[last_match_pos + addLit].mlen = 1; /* literal */
-						opt[last_match_pos + addLit].off = 0;
-						opt[last_match_pos + addLit].litlen = addLit;
-						opt[last_match_pos + addLit].price = opt[last_match_pos].price + LZ4HC_literalsPrice(addLit);
-						//DEBUGLOG(7, "rPos:%3i => price:%3i (litlen=%i) -- initial setup",
-						//						last_match_pos + addLit, opt[last_match_pos + addLit].price, addLit);
-					}
-				}
-
-				/* check further positions */
-				for (cur = 1; cur < last_match_pos; cur++) {
-					byte* curPtr = ip + cur;
-					LZ4HC_match_t newMatch;
-
-					if (curPtr > mflimit) break;
-					//DEBUGLOG(7, "rPos:%u[%u] vs [%u]%u",
-					//				cur, opt[cur].price, opt[cur + 1].price, cur + 1);
-					if (fullUpdate) {
-						/* not useful to search here if next position has same (or lower) cost */
-						if ((opt[cur + 1].price <= opt[cur].price)
-							/* in some cases, next position has same cost, but cost rises sharply after, so a small match would still be beneficial */
-							&& (opt[cur + MINMATCH].price < opt[cur].price + 3/*min seq price*/))
-							continue;
-					}
-					else {
-						/* not useful to search here if next position has same (or lower) cost */
-						if (opt[cur + 1].price <= opt[cur].price) continue;
-					}
-
-					//DEBUGLOG(7, "search at rPos:%u", cur);
-					if (fullUpdate)
-						newMatch = LZ4HC_FindLongerMatch(ctx, curPtr, matchlimit, MINMATCH - 1, nbSearches, dict, favorDecSpeed);
-					else
-						/* only test matches of minimum length; slightly faster, but misses a few bytes */
-						newMatch = LZ4HC_FindLongerMatch(ctx, curPtr, matchlimit, last_match_pos - cur, nbSearches, dict, favorDecSpeed);
-					if (newMatch.len == 0) continue;
-
-					if (((size_t)newMatch.len > sufficient_len)
-						|| (newMatch.len + cur >= LZ4_OPT_NUM)) {
-						/* immediate encoding */
-						best_mlen = newMatch.len;
-						best_off = newMatch.off;
-						last_match_pos = cur + 1;
-						goto encode;
-					}
-
-					/* before match : set price with literals at beginning */
-					{
-						int baseLitlen = opt[cur].litlen;
-						int litlen;
-						for (litlen = 1; litlen < MINMATCH; litlen++) {
-							int price = opt[cur].price - LZ4HC_literalsPrice(baseLitlen) + LZ4HC_literalsPrice(baseLitlen + litlen);
-							int pos = cur + litlen;
-							if (price < opt[pos].price) {
-								opt[pos].mlen = 1; /* literal */
-								opt[pos].off = 0;
-								opt[pos].litlen = baseLitlen + litlen;
-								opt[pos].price = price;
-								//DEBUGLOG(7, "rPos:%3i => price:%3i (litlen=%i)",
-								//						pos, price, opt[pos].litlen);
-							}
-						}
-					}
-
-					/* set prices using match at position = cur */
-					{
-						int matchML = newMatch.len;
-						int ml = MINMATCH;
-
-						Debug.Assert(cur + newMatch.len < LZ4_OPT_NUM);
-						for (; ml <= matchML; ml++) {
-							int pos = cur + ml;
-							int offset = newMatch.off;
-							int price;
-							int ll;
-							//DEBUGLOG(7, "testing price rPos %i (last_match_pos=%i)",
-							//						pos, last_match_pos);
-							if (opt[cur].mlen == 1) {
-								ll = opt[cur].litlen;
-								price = ((cur > ll) ? opt[cur - ll].price : 0)
-											+ LZ4HC_sequencePrice(ll, ml);
-							}
-							else {
-								ll = 0;
-								price = opt[cur].price + LZ4HC_sequencePrice(0, ml);
-							}
-
-							Debug.Assert((uint)favorDecSpeed <= 1);
-							if (pos > last_match_pos + TRAILING_LITERALS
-							 || price <= opt[pos].price - (int)favorDecSpeed) {
-								//DEBUGLOG(7, "rPos:%3i => price:%3i (matchlen=%i)",
-								//						pos, price, ml);
-								Debug.Assert(pos < LZ4_OPT_NUM);
-								if ((ml == matchML)  /* last pos of last match */
-									&& (last_match_pos < pos))
-
-									last_match_pos = pos;
-								opt[pos].mlen = ml;
-								opt[pos].off = offset;
-								opt[pos].litlen = ll;
-								opt[pos].price = price;
-							}
-						}
-					}
-					/* complete following positions with literals */
-					{
-						int addLit;
-						for (addLit = 1; addLit <= TRAILING_LITERALS; addLit++) {
-							opt[last_match_pos + addLit].mlen = 1; /* literal */
-							opt[last_match_pos + addLit].off = 0;
-							opt[last_match_pos + addLit].litlen = addLit;
-							opt[last_match_pos + addLit].price = opt[last_match_pos].price + LZ4HC_literalsPrice(addLit);
-							//DEBUGLOG(7, "rPos:%3i => price:%3i (litlen=%i)", last_match_pos + addLit, opt[last_match_pos + addLit].price, addLit);
-						}
-					}
-				}  /* for (cur = 1; cur <= last_match_pos; cur++) */
-
-				Debug.Assert(last_match_pos < LZ4_OPT_NUM + TRAILING_LITERALS);
-				best_mlen = opt[last_match_pos].mlen;
-				best_off = opt[last_match_pos].off;
-				cur = last_match_pos - best_mlen;
-
-			encode: /* cur, last_match_pos, best_mlen, best_off must be set */
-				Debug.Assert(cur < LZ4_OPT_NUM);
-				Debug.Assert(last_match_pos >= 1);  /* == 1 when only one candidate */
-																						//DEBUGLOG(6, "reverse traversal, looking for shortest path (last_match_pos=%i)", last_match_pos);
-				{
-					int candidate_pos = cur;
-					int selected_matchLength = best_mlen;
-					int selected_offset = best_off;
-					while (true) {  /* from end to beginning */
-						int next_matchLength = opt[candidate_pos].mlen;  /* can be 1, means literal */
-						int next_offset = opt[candidate_pos].off;
-						//DEBUGLOG(7, "pos %i: sequence length %i", candidate_pos, selected_matchLength);
-						opt[candidate_pos].mlen = selected_matchLength;
-						opt[candidate_pos].off = selected_offset;
-						selected_matchLength = next_matchLength;
-						selected_offset = next_offset;
-						if (next_matchLength > candidate_pos) break; /* last match elected, first match to encode */
-						Debug.Assert(next_matchLength > 0);  /* can be 1, means literal */
-						candidate_pos -= next_matchLength;
-					}
-				}
-
-				/* encode all recorded sequences in order */
-				{
-					int rPos = 0;  /* relative position (to ip) */
-					while (rPos < last_match_pos) {
-						int ml = opt[rPos].mlen;
-						int offset = opt[rPos].off;
-						if (ml == 1) { ip++; rPos++; continue; }  /* literal; note: can end up with several literals, in which case, skip them */
-						rPos += ml;
-						Debug.Assert(ml >= MINMATCH);
-						Debug.Assert((offset >= 1) && (offset <= LZ4_DISTANCE_MAX));
-						opSaved = op;
-						if (LZ4HC_encodeSequence(&ip, &op, &anchor, ml, ip - offset, limit, oend))   /* updates ip, op and anchor */
-							goto _dest_overflow;
-					}
-				}
-			}  /* while (ip <= mflimit) */
-
-		_last_literals:
-			/* Encode Last Literals */
-			{
-				size_t lastRunSize = (size_t)(iend - anchor);  /* literals */
-				size_t litLength = (lastRunSize + 255 - RUN_MASK) / 255;
-				size_t totalSize = 1 + litLength + lastRunSize;
-				if (limit == limitedOutput_directive.fillOutput) oend += LASTLITERALS;  /* restore correct value */
-				if (limit != 0 && (op + totalSize > oend)) {
-					if (limit == limitedOutput_directive.limitedOutput) return 0;  /* Check output limit */
-																																				 /* adapt lastRunSize to fill 'dst' */
-					lastRunSize = (size_t)(oend - op) - 1;
-					litLength = (lastRunSize + 255 - RUN_MASK) / 255;
-					lastRunSize -= litLength;
-				}
-				ip = anchor + lastRunSize;
-
-				if (lastRunSize >= RUN_MASK) {
-					size_t accumulator = lastRunSize - RUN_MASK;
-
-					*op++ = ((byte)RUN_MASK << ML_BITS);
-					for (; accumulator >= 255; accumulator -= 255) *op++ = 255;
-
-					*op++ = (byte)accumulator;
-				}
-				else {
-
-					*op++ = (byte)(lastRunSize << ML_BITS);
-				}
-				Unsafe.CopyBlock(op, anchor, (uint)lastRunSize);
-				op += lastRunSize;
-			}
-
-			/* End */
-			*srcSizePtr = (int)(((byte*)ip) - source);
-			return (int)((byte*)op - dst);
-
-		_dest_overflow:
-			if (limit == limitedOutput_directive.fillOutput) {
-				op = opSaved;  /* restore correct out pointer */
-				goto _last_literals;
-			}
-			return 0;
-		}
-
-		private static int LZ4HC_literalsPrice(int litlen) {
-			int price = litlen;
-			Debug.Assert(litlen >= 0);
-			if (litlen >= (int)RUN_MASK)
-
-				price += 1 + ((litlen - (int)RUN_MASK) / 255);
-			return price;
-		}
-
-		private static int LZ4HC_sequencePrice(int litlen, int mlen) {
-			int price = 1 + 2; /* token + 16-bit offset */
-			Debug.Assert(litlen >= 0);
-			Debug.Assert(mlen >= MINMATCH);
-
-			price += LZ4HC_literalsPrice(litlen);
-
-			if (mlen >= (int)(ML_MASK + MINMATCH))
-				price += 1 + ((mlen - (int)(ML_MASK + MINMATCH)) / 255);
-
-			return price;
-		}
-
-		private static unsafe LZ4HC_match_t LZ4HC_FindLongerMatch(LZ4HC_CCtx_internal* ctx,
-											 byte* ip, byte* iHighLimit,
-											int minLen, int nbSearches,
-											 dictCtx_directive dict,
-											 HCfavor_e favorDecSpeed) {
-
+		private static unsafe LZ4HC_match_t
+		LZ4HC_FindLongerMatch(LZ4HC_CCtx_internal* ctx,
+													 byte* ip, byte* iHighLimit,
+													int minLen, int nbSearches,
+													 dictCtx_directive dict,
+													 HCfavor_e favorDecSpeed) {
 			LZ4HC_match_t match = new LZ4HC_match_t() { off = 0, len = 0 };
 			byte* matchPtr = null;
 			/* note : LZ4HC_InsertAndGetWiderMatch() is able to modify the starting position of a match (*startpos),
@@ -3003,12 +2527,474 @@ namespace IonKiwi.lz4 {
 			 * so LZ4HC_InsertAndGetWiderMatch() won't be allowed to search past ip */
 			int matchLength = LZ4HC_InsertAndGetWiderMatch(ctx, ip, ip, iHighLimit, minLen, &matchPtr, &ip, nbSearches, true /*patternAnalysis*/, true /*chainSwap*/, dict, favorDecSpeed);
 			if (matchLength <= minLen) return match;
-			if (favorDecSpeed != 0) {
+			if (favorDecSpeed != HCfavor_e.favorCompressionRatio) {
 				if ((matchLength > 18) & (matchLength <= 36)) matchLength = 18;   /* favor shortcut */
 			}
 			match.len = matchLength;
 			match.off = (int)(ip - matchPtr);
 			return match;
+		}
+
+		private static unsafe int LZ4HC_sequencePrice(int litlen, int mlen) {
+			int price = 1 + 2; /* token + 16-bit offset */
+			Debug.Assert(litlen >= 0);
+			Debug.Assert(mlen >= 4);
+
+			price += LZ4HC_literalsPrice(litlen);
+
+			if (mlen >= (int)(((1U << 4) - 1) + 4))
+				price += 1 + ((mlen - (int)(((1U << 4) - 1) + 4)) / 255);
+
+			return price;
+		}
+
+		private static unsafe int LZ4HC_literalsPrice(int litlen) {
+			int price = litlen;
+			Debug.Assert(litlen >= 0);
+			if (litlen >= (int)((1U << (8 - 4)) - 1))
+				price += 1 + ((litlen - (int)((1U << (8 - 4)) - 1)) / 255);
+			return price;
+		}
+
+		// NOTE: translation: changed char* to byte*
+		internal static unsafe int LZ4_setStreamDecode(LZ4_streamDecode* LZ4_streamDecode, byte* dictionary, int dictSize) {
+			LZ4_streamDecode_t_internal* lz4sd = &LZ4_streamDecode->internal_donotuse;
+			lz4sd->prefixSize = (size_t)dictSize;
+			lz4sd->prefixEnd = (byte*)dictionary + dictSize;
+			lz4sd->externalDict = null;
+			lz4sd->extDictSize = 0;
+			return 1;
+		}
+
+		// NOTE: translation: changed char* to byte*
+		internal static unsafe int LZ4_decompress_safe_continue(LZ4_streamDecode* LZ4_streamDecode, byte* source, byte* dest, int compressedSize, int maxOutputSize) {
+
+			LZ4_streamDecode_t_internal* lz4sd = &LZ4_streamDecode->internal_donotuse;
+			int result;
+
+			if (lz4sd->prefixSize == 0) {
+				/* The first call, no dictionary yet. */
+				Debug.Assert(lz4sd->extDictSize == 0);
+				result = LZ4_decompress_safe(source, dest, compressedSize, maxOutputSize);
+				if (result <= 0) return result;
+				lz4sd->prefixSize = (size_t)result;
+				lz4sd->prefixEnd = (byte*)dest + result;
+			}
+			else if (lz4sd->prefixEnd == (byte*)dest) {
+				/* They're rolling the current segment. */
+				if (lz4sd->prefixSize >= 64 * (1 << 10) - 1)
+					result = LZ4_decompress_safe_withPrefix64k(source, dest, compressedSize, maxOutputSize);
+
+				else if (lz4sd->extDictSize == 0)
+					result = LZ4_decompress_safe_withSmallPrefix(source, dest, compressedSize, maxOutputSize,
+																											 lz4sd->prefixSize);
+				else
+					result = LZ4_decompress_safe_doubleDict(source, dest, compressedSize, maxOutputSize,
+																									lz4sd->prefixSize, lz4sd->externalDict, lz4sd->extDictSize);
+				if (result <= 0) return result;
+				lz4sd->prefixSize += (size_t)result;
+				lz4sd->prefixEnd += result;
+			}
+			else {
+				/* The buffer wraps around, or they're switching to another buffer. */
+				lz4sd->extDictSize = lz4sd->prefixSize;
+				lz4sd->externalDict = lz4sd->prefixEnd - lz4sd->extDictSize;
+				result = LZ4_decompress_safe_forceExtDict(source, dest, compressedSize, maxOutputSize,
+																									lz4sd->externalDict, lz4sd->extDictSize);
+				if (result <= 0) return result;
+				lz4sd->prefixSize = (size_t)result;
+				lz4sd->prefixEnd = (byte*)dest + result;
+			}
+
+			return result;
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_decompress_safe(byte* source, byte* dest, int compressedSize, int maxDecompressedSize) {
+			return LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize,
+																	 endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
+																		(byte*)dest, null, 0);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_decompress_safe_withPrefix64k(byte* source, byte* dest, int compressedSize, int maxOutputSize) {
+			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
+																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.withPrefix64k,
+																		(byte*)dest - 64 * (1 << 10), null, 0);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_decompress_safe_withSmallPrefix(byte* source, byte* dest, int compressedSize, int maxOutputSize,
+																							 size_t prefixSize) {
+			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
+																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
+																		(byte*)dest - prefixSize, null, 0);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_decompress_safe_doubleDict(byte* source, byte* dest, int compressedSize, int maxOutputSize,
+																	 size_t prefixSize, void* dictStart, size_t dictSize) {
+			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
+																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.usingExtDict,
+																		(byte*)dest - prefixSize, (byte*)dictStart, dictSize);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_decompress_safe_forceExtDict(byte* source, byte* dest,
+
+																		 int compressedSize, int maxOutputSize,
+
+																			void* dictStart, size_t dictSize) {
+			return LZ4_decompress_generic(source, dest, compressedSize, maxOutputSize,
+																		endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.usingExtDict,
+																		(byte*)dest, (byte*)dictStart, dictSize);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_decompress_generic(
+									byte* src,
+								 byte* dst,
+								 int srcSize,
+								 int outputSize,         /* If endOnInput==endOnInputSize, this value is `dstCapacity` */
+								 endCondition_directive endOnInput,   /* endOnOutputSize, endOnInputSize */
+								 earlyEnd_directive partialDecoding,  /* full, partial */
+								 dict_directive dict,                 /* noDict, withPrefix64k, usingExtDict */
+									byte* lowPrefix,  /* always <= dst, == dst when no prefix */
+									byte* dictStart,  /* only if dict==usingExtDict */
+									size_t dictSize         /* note : = 0 if noDict */
+								 ) {
+			if (src == null) { return -1; }
+
+			{
+				byte* ip = (byte*)src;
+				byte* iend = ip + srcSize;
+
+				byte* op = (byte*)dst;
+				byte* oend = op + outputSize;
+				byte* cpy;
+
+				byte* dictEnd = (dictStart == null) ? null : dictStart + dictSize;
+
+				// NOTE: translation: change to bool
+				bool safeDecode = (endOnInput == endCondition_directive.endOnInputSize);
+				bool checkOffset = ((safeDecode) && (dictSize < (int)(64 * (1 << 10))));
+
+
+				/* Set up the "end" pointers for the shortcut. */
+				byte* shortiend = iend - (endOnInput != endCondition_directive.endOnOutputSize ? 14 : 8) /*maxLL*/ - 2 /*offset*/;
+				byte* shortoend = oend - (endOnInput != endCondition_directive.endOnOutputSize ? 14 : 8) /*maxLL*/ - 18 /*maxML*/;
+
+				byte* match;
+				size_t offset;
+				uint token;
+				size_t length;
+
+
+				//DEBUGLOG(5, "LZ4_decompress_generic (srcSize:%i, dstSize:%i)", srcSize, outputSize);
+
+				/* Special cases */
+				Debug.Assert(lowPrefix <= op);
+				if ((endOnInput != endCondition_directive.endOnOutputSize) && ((outputSize == 0))) {
+					/* Empty output buffer */
+					if (partialDecoding != earlyEnd_directive.decode_full_block) return 0;
+					return ((srcSize == 1) && (*ip == 0)) ? 0 : -1;
+				}
+				if ((endOnInput == endCondition_directive.endOnOutputSize) && ((outputSize == 0))) { return (*ip == 0 ? 1 : -1); }
+				if ((endOnInput != endCondition_directive.endOnOutputSize) && (srcSize == 0)) { return -1; }
+
+				/* Main Loop : decode remaining sequences where output < FASTLOOP_SAFE_DISTANCE */
+				while (true) {
+					token = *ip++;
+					length = token >> 4;  /* literal length */
+
+					Debug.Assert(endOnInput == endCondition_directive.endOnOutputSize || ip <= iend); /* ip < iend before the increment */
+
+					/* A two-stage shortcut for the most common case:
+					 * 1) If the literal length is 0..14, and there is enough space,
+					 * enter the shortcut and copy 16 bytes on behalf of the literals
+					 * (in the fast mode, only 8 bytes can be safely copied this way).
+					 * 2) Further if the match length is 4..18, copy 18 bytes in a similar
+					 * manner; but we ensure that there's enough space in the output for
+					 * those 18 bytes earlier, upon entering the shortcut (in other words,
+					 * there is a combined check for both stages).
+					 */
+					if ((endOnInput != endCondition_directive.endOnOutputSize ? length != ((1U << (8 - 4)) - 1) : length <= 8)
+						/* strictly "less than" on input, to re-enter the loop with at least one byte */
+						&& ((endOnInput != endCondition_directive.endOnOutputSize ? ip < shortiend : true) & (op <= shortoend))) {
+						/* Copy the literals */
+						Unsafe.CopyBlock(op, ip, endOnInput != endCondition_directive.endOnOutputSize ? 16u : 8u);
+						op += length; ip += length;
+
+						/* The second stage: prepare for match copying, decode full info.
+						 * If it doesn't work out, the info won't be wasted. */
+						length = token & ((1U << 4) - 1); /* match length */
+						offset = LZ4_readLE16(ip); ip += 2;
+						match = op - offset;
+						Debug.Assert(match <= op); /* check overflow */
+
+						/* Do not deal with overlapping matches. */
+						if ((length != ((1U << 4) - 1))
+							&& (offset >= 8)
+							&& (dict == dict_directive.withPrefix64k || match >= lowPrefix)) {
+							/* Copy the match. */
+							Unsafe.CopyBlock(op + 0, match + 0, 8);
+							Unsafe.CopyBlock(op + 8, match + 8, 8);
+							Unsafe.CopyBlock(op + 16, match + 16, 2);
+							op += length + 4;
+							/* Both stages worked, load the next token. */
+							continue;
+						}
+
+						/* The second stage didn't work out, but the info is ready.
+						 * Propel it right to the point of match copying. */
+						goto _copy_match;
+					}
+
+					/* decode literal length */
+					if (length == ((1U << (8 - 4)) - 1)) {
+						variable_length_error error = variable_length_error.ok;
+						length += read_variable_length(&ip, iend - ((1U << (8 - 4)) - 1), (int)endOnInput, (int)endOnInput, &error);
+						if (error == variable_length_error.initial_error) { goto _output_error; }
+						// NOTE: translation: changed uptrval
+						if (safeDecode) {
+							if (IntPtr.Size == 8) {
+								if (((ulong)(op) + length < (ulong)(op))) { goto _output_error; } /* overflow detection */
+								if (((ulong)(ip) + length < (ulong)(ip))) { goto _output_error; } /* overflow detection */
+							}
+							else if (IntPtr.Size == 4) {
+								if (((uint)(op) + length < (uint)(op))) { goto _output_error; } /* overflow detection */
+								if (((uint)(ip) + length < (uint)(ip))) { goto _output_error; } /* overflow detection */
+							}
+							else {
+								Debug.Fail("IntPtr.Size == " + IntPtr.Size);
+							}
+						}
+					}
+
+					/* copy literals */
+					cpy = op + length;
+#if LZ4_FAST_DEC_LOOP
+        safe_literal_copy:
+#endif
+					//LZ4_STATIC_ASSERT(MFLIMIT >= WILDCOPYLENGTH);
+					if (((endOnInput != endCondition_directive.endOnOutputSize) && ((cpy > oend - MFLIMIT) || (ip + length > iend - (2 + 1 + LASTLITERALS))))
+						|| ((endOnInput == endCondition_directive.endOnOutputSize) && (cpy > oend - WILDCOPYLENGTH))) {
+						/* We've either hit the input parsing restriction or the output parsing restriction.
+						 * If we've hit the input parsing condition then this must be the last sequence.
+						 * If we've hit the output parsing condition then we are either using partialDecoding
+						 * or we've hit the output parsing condition.
+						 */
+						if (partialDecoding != earlyEnd_directive.decode_full_block) {
+							/* Since we are partial decoding we may be in this block because of the output parsing
+							 * restriction, which is not valid since the output buffer is allowed to be undersized.
+							 */
+							Debug.Assert(endOnInput != endCondition_directive.endOnOutputSize);
+							/* If we're in this block because of the input parsing condition, then we must be on the
+							 * last sequence (or invalid), so we must check that we exactly consume the input.
+							 */
+							if ((ip + length > iend - (2 + 1 + LASTLITERALS)) && (ip + length != iend)) { goto _output_error; }
+							Debug.Assert(ip + length <= iend);
+							/* We are finishing in the middle of a literals segment.
+							 * Break after the copy.
+							 */
+							if (cpy > oend) {
+								cpy = oend;
+								Debug.Assert(op <= oend);
+								length = (size_t)(oend - op);
+							}
+							Debug.Assert(ip + length <= iend);
+						}
+						else {
+							/* We must be on the last sequence because of the parsing limitations so check
+							 * that we exactly regenerate the original size (must be exact when !endOnInput).
+							 */
+							if ((endOnInput == endCondition_directive.endOnOutputSize) && (cpy != oend)) { goto _output_error; }
+							/* We must be on the last sequence (or invalid) because of the parsing limitations
+							 * so check that we exactly consume the input and don't overrun the output buffer.
+							 */
+							if ((endOnInput != endCondition_directive.endOnOutputSize) && ((ip + length != iend) || (cpy > oend))) { goto _output_error; }
+						}
+						Buffer.MemoryCopy(ip, op, length, length);  /* supports overlapping memory regions, which only matters for in-place decompression scenarios */
+						ip += length;
+						op += length;
+						/* Necessarily EOF when !partialDecoding. When partialDecoding
+						 * it is EOF if we've either filled the output buffer or hit
+						 * the input parsing restriction.
+						 */
+						if (partialDecoding == earlyEnd_directive.decode_full_block || (cpy == oend) || (ip == iend)) {
+							break;
+						}
+					}
+					else {
+						LZ4_wildCopy8(op, ip, cpy);   /* may overwrite up to WILDCOPYLENGTH beyond cpy */
+						ip += length; op = cpy;
+					}
+
+					/* get offset */
+					offset = LZ4_readLE16(ip); ip += 2;
+					match = op - offset;
+
+					/* get matchlength */
+					length = token & ((1U << 4) - 1);
+
+				_copy_match:
+					if (length == ((1U << 4) - 1)) {
+						variable_length_error error = variable_length_error.ok;
+						length += read_variable_length(&ip, iend - LASTLITERALS + 1, (int)endOnInput, 0, &error);
+						if (error != variable_length_error.ok) goto _output_error;
+						if (safeDecode) {
+							// NOTE: translation: changed uptrval
+							if (IntPtr.Size == 8) {
+								if (((ulong)(op) + length < (ulong)op)) goto _output_error;   /* overflow detection */
+							}
+							else if (IntPtr.Size == 4) {
+								if (((uint)(op) + length < (uint)op)) goto _output_error;   /* overflow detection */
+							}
+							else {
+								Debug.Fail("IntPtr.Size == " + IntPtr.Size);
+							}
+						}
+
+					}
+					length += 4;
+
+#if LZ4_FAST_DEC_LOOP
+        safe_match_copy:
+#endif
+					if ((checkOffset) && ((match + dictSize < lowPrefix))) goto _output_error;   /* Error : offset outside buffers */
+																																											 /* match starting within external dictionary */
+					if ((dict == dict_directive.usingExtDict) && (match < lowPrefix)) {
+						if ((op + length > oend - LASTLITERALS)) {
+							if (partialDecoding != earlyEnd_directive.decode_full_block) length = Math.Min(length, (size_t)(oend - op));
+							else goto _output_error;   /* doesn't respect parsing restriction */
+						}
+
+						if (length <= (size_t)(lowPrefix - match)) {
+							/* match fits entirely within external dictionary : just copy */
+							Buffer.MemoryCopy(dictEnd - (lowPrefix - match), op, length, length);
+							op += length;
+						}
+						else {
+							/* match stretches into both external dictionary and current block */
+							size_t copySize = (size_t)(lowPrefix - match);
+							size_t restSize = length - copySize;
+							Unsafe.CopyBlock(op, dictEnd - copySize, copySize);
+							op += copySize;
+							if (restSize > (size_t)(op - lowPrefix)) {  /* overlap copy */
+								byte* endOfMatch = op + restSize;
+
+								byte* copyFrom = lowPrefix;
+								while (op < endOfMatch) *op++ = *copyFrom++;
+							}
+							else {
+								Unsafe.CopyBlock(op, lowPrefix, restSize);
+								op += restSize;
+							}
+						}
+						continue;
+					}
+					Debug.Assert(match >= lowPrefix);
+
+					/* copy match within block */
+					cpy = op + length;
+
+					/* partialDecoding : may end anywhere within the block */
+					Debug.Assert(op <= oend);
+					if (partialDecoding != earlyEnd_directive.decode_full_block && (cpy > oend - MATCH_SAFEGUARD_DISTANCE)) {
+						size_t mlen = Math.Min(length, (size_t)(oend - op));
+
+						byte* matchEnd = match + mlen;
+						byte* copyEnd = op + mlen;
+						if (matchEnd > op) {   /* overlap copy */
+							while (op < copyEnd) { *op++ = *match++; }
+						}
+						else {
+							Unsafe.CopyBlock(op, match, mlen);
+						}
+						op = copyEnd;
+						if (op == oend) { break; }
+						continue;
+					}
+
+					if ((offset < 8)) {
+						LZ4_write32(op, 0);   /* silence msan warning when offset==0 */
+						op[0] = match[0];
+						op[1] = match[1];
+						op[2] = match[2];
+						op[3] = match[3];
+						match += inc32table[offset];
+						Unsafe.CopyBlock(op + 4, match, 4);
+						match -= dec64table[offset];
+					}
+					else {
+						Unsafe.CopyBlock(op, match, 8);
+						match += 8;
+					}
+					op += 8;
+
+					if ((cpy > oend - MATCH_SAFEGUARD_DISTANCE)) {
+						byte* oCopyLimit = oend - (WILDCOPYLENGTH - 1);
+						if (cpy > oend - LASTLITERALS) { goto _output_error; } /* Error : last LASTLITERALS bytes must be literals (uncompressed) */
+						if (op < oCopyLimit) {
+							LZ4_wildCopy8(op, match, oCopyLimit);
+							match += oCopyLimit - op;
+							op = oCopyLimit;
+						}
+						while (op < cpy) { *op++ = *match++; }
+					}
+					else {
+						Unsafe.CopyBlock(op, match, 8);
+						if (length > 16) { LZ4_wildCopy8(op + 8, match + 8, cpy); }
+					}
+					op = cpy;   /* wildcopy correction */
+				}
+
+				/* end of decoding */
+				if (endOnInput != endCondition_directive.endOnOutputSize) {
+					// NOTE: translation: changed char* to byte*
+					return (int)(((byte*)op) - dst);     /* Nb of output bytes decoded */
+				}
+				else {
+					// NOTE: translation: changed char* to byte*
+					return (int)(((byte*)ip) - src);   /* Nb of input bytes read */
+				}
+
+			/* Overflow error detected */
+			_output_error:
+				// NOTE: translation: changed char* to byte*
+				return (int)(-(((byte*)ip) - src)) - 1;
+			}
+		}
+
+		private static unsafe ushort LZ4_readLE16(void* memPtr) {
+			if (BitConverter.IsLittleEndian) {
+				return LZ4_read16(memPtr);
+			}
+			else {
+				byte* p = (byte*)memPtr;
+				return (ushort)((ushort)p[0] + (p[1] << 8));
+			}
+		}
+
+		private static unsafe uint read_variable_length(byte** ip, byte* lencheck, int loop_check, int initial_check, variable_length_error* error) {
+			uint length = 0;
+			uint s;
+			if (initial_check != 0 && ((*ip) >= lencheck)) {    /* overflow detection */
+				*error = variable_length_error.initial_error;
+				return length;
+			}
+			do {
+				s = **ip;
+				(*ip)++;
+				length += s;
+				if (loop_check != 0 && ((*ip) >= lencheck)) {    /* overflow detection */
+
+					*error = variable_length_error.loop_error;
+					return length;
+				}
+			} while (s == 255);
+
+			return length;
 		}
 	}
 }

@@ -93,10 +93,10 @@ namespace IonKiwi.lz4 {
 		private sealed unsafe class UnsafeData {
 			public byte* _inputBufferPtr;
 			public byte* _outputBufferPtr;
-			public LZ4_stream_u* _lz4Stream = null;
-			public LZ4_streamHC_u* _lz4HCStream = null;
-			public LZ4_streamDecode_u* _lz4DecodeStream = null;
-			public XXH32_state_s* _contentHashState = null;
+			public LZ4_stream* _lz4Stream = null;
+			public LZ4_streamHC* _lz4HCStream = null;
+			public LZ4_streamDecode* _lz4DecodeStream = null;
+			public XXH32_state* _contentHashState = null;
 		}
 
 		public event EventHandler<LZ4UserDataFrameEventArgs> UserDataFrameRead;
