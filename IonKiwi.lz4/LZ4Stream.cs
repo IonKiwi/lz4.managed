@@ -42,6 +42,16 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+#if NETSTANDARD2_0
+using PlatformTask = System.Threading.Tasks.Task;
+using PlatformTaskBool = System.Threading.Tasks.Task<bool>;
+using PlatformTaskInt = System.Threading.Tasks.Task<int>;
+#else
+using PlatformTask = System.Threading.Tasks.ValueTask;
+using PlatformTaskBool = System.Threading.Tasks.ValueTask<bool>;
+using PlatformTaskInt = System.Threading.Tasks.ValueTask<int>;
+#endif
+
 namespace IonKiwi.lz4 {
 	public sealed class LZ4Stream : Stream {
 
@@ -314,7 +324,7 @@ namespace IonKiwi.lz4 {
 			WriteEndFrameInternal();
 		}
 
-		public Task WriteEndFrameAsync() {
+		public PlatformTask WriteEndFrameAsync() {
 			CheckDisposed();
 			if (!(_compressionMode == CompressionMode.Compress && _streamMode == LZ4StreamMode.Write)) {
 				throw new NotSupportedException("Only supported in compress mode with a write mode stream");
@@ -332,7 +342,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		private async Task WriteHeaderDataAsync(byte[] buffer, int offset, int count) {
+		private async PlatformTask WriteHeaderDataAsync(byte[] buffer, int offset, int count) {
 			if (_streamMode == LZ4StreamMode.Read) {
 				Buffer.BlockCopy(buffer, offset, _headerBuffer, _headerBufferSize, count);
 				_headerBufferSize += count;
@@ -382,7 +392,7 @@ namespace IonKiwi.lz4 {
 			_hasWrittenStartFrame = false;
 		}
 
-		private async Task WriteEndFrameInternalAsync() {
+		private async PlatformTask WriteEndFrameInternalAsync() {
 			if (!_hasWrittenInitialStartFrame) {
 				//await WriteEmptyFrameAsync().ConfigureAwait(false);
 				return;
@@ -462,7 +472,7 @@ namespace IonKiwi.lz4 {
 			WriteHeaderData(checksumByte, 0, 1);
 		}
 
-		private async Task WriteStartFrameAsync() {
+		private async PlatformTask WriteStartFrameAsync() {
 			_hasWrittenStartFrame = true;
 			_hasWrittenInitialStartFrame = true;
 			_frameCount++;
@@ -570,7 +580,7 @@ namespace IonKiwi.lz4 {
 			_frameCount++;
 		}
 
-		private async Task WriteEmptyFrameAsync() {
+		private async PlatformTask WriteEmptyFrameAsync() {
 			if (_compressionMode != CompressionMode.Compress) { throw new NotSupportedException("Only supported in compress mode"); }
 
 			if (_hasWrittenStartFrame || _hasWrittenInitialStartFrame) {
@@ -640,7 +650,7 @@ namespace IonKiwi.lz4 {
 			WriteUserDataFrameInternal(id, buffer, offset, count);
 		}
 
-		public Task WriteUserDataFrameAsync(int id, byte[] buffer, int offset, int count) {
+		public PlatformTask WriteUserDataFrameAsync(int id, byte[] buffer, int offset, int count) {
 			CheckDisposed();
 			if (!(_compressionMode == CompressionMode.Compress && _streamMode == LZ4StreamMode.Write)) {
 				throw new NotSupportedException("Only supported in compress mode with a write mode stream");
@@ -686,7 +696,7 @@ namespace IonKiwi.lz4 {
 			_frameCount++;
 		}
 
-		private async Task WriteUserDataFrameInternalAsync(int id, byte[] buffer, int offset, int count) {
+		private async PlatformTask WriteUserDataFrameInternalAsync(int id, byte[] buffer, int offset, int count) {
 			if (id < 0 || id > 15) { throw new ArgumentOutOfRangeException("id"); }
 			else if (buffer == null) { throw new ArgumentNullException("buffer"); }
 			else if (count < 0) { throw new ArgumentOutOfRangeException("count"); }
@@ -823,7 +833,7 @@ namespace IonKiwi.lz4 {
 			if (_ringbufferOffset > _inputBufferSize) _ringbufferOffset = 0;
 		}
 
-		private async Task FlushCurrentBlockAsync(bool suppressEndFrame) {
+		private async PlatformTask FlushCurrentBlockAsync(bool suppressEndFrame) {
 
 			//char* inputBufferPtr = &_inputBufferPtr[_ringbufferOffset];
 			//char* outputBufferPtr = &_outputBufferPtr[0];
@@ -1041,7 +1051,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		private async Task<bool> GetFrameInfoAsync() {
+		private async PlatformTaskBool GetFrameInfoAsync() {
 
 			if (_hasFrameInfo) {
 				throw new Exception("should not have happend, _hasFrameInfo: " + _hasFrameInfo);
@@ -1340,7 +1350,7 @@ namespace IonKiwi.lz4 {
 			return true;
 		}
 
-		private async Task<bool> AcquireNextBlockAsync() {
+		private async PlatformTaskBool AcquireNextBlockAsync() {
 			if (!_hasFrameInfo) {
 				if (!await GetFrameInfoAsync().ConfigureAwait(false)) {
 					return false;
@@ -1590,7 +1600,7 @@ namespace IonKiwi.lz4 {
 			_currentMode = 1;
 		}
 
-		private async Task CompressNextBlockAsync() {
+		private async PlatformTask CompressNextBlockAsync() {
 
 			// write at least one start frame
 			//if (!_hasWrittenInitialStartFrame) { WriteStartFrame(); }
@@ -1792,7 +1802,7 @@ namespace IonKiwi.lz4 {
 			return total;
 		}
 
-		private async Task<int> CompressDataAsync(byte[] buffer, int offset, int count) {
+		private async PlatformTaskInt CompressDataAsync(byte[] buffer, int offset, int count) {
 			// _currentMode == 0 . frame start
 			// _currentMode == 1 . copy header data
 			// _currentMode == 2 . block data
@@ -2133,7 +2143,7 @@ namespace IonKiwi.lz4 {
 			} while (consumed < count);
 		}
 
-		private async Task DecompressDataAsync(byte[] data, int offset, int count) {
+		private async PlatformTask DecompressDataAsync(byte[] data, int offset, int count) {
 			int consumed = 0;
 			do {
 				offset += consumed;
@@ -2229,7 +2239,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		private async Task<int> DecompressBlockAsync(byte[] data, int offset, int count) {
+		private async PlatformTaskInt DecompressBlockAsync(byte[] data, int offset, int count) {
 			if (_currentMode == 6) {
 				return HandleDecompressFrameData(data, offset, count);
 			}
