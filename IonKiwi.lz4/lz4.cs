@@ -1415,7 +1415,7 @@ namespace IonKiwi.lz4 {
 				return LZ4_compressHC_continue_generic(LZ4_streamHCPtr, src, dst, &srcSize, dstCapacity, limitedOutput_directive.notLimited);
 		}
 
-		private static int LZ4_compressBound(int isize) {
+		internal static int LZ4_compressBound(int isize) {
 			return ((uint)(isize) > (uint)LZ4_MAX_INPUT_SIZE ? 0 : (isize) + ((isize) / 255) + 16);
 		}
 
@@ -2610,7 +2610,7 @@ namespace IonKiwi.lz4 {
 		}
 
 		// NOTE: translation: changed char* to byte*
-		private static unsafe int LZ4_decompress_safe(byte* source, byte* dest, int compressedSize, int maxDecompressedSize) {
+		internal static unsafe int LZ4_decompress_safe(byte* source, byte* dest, int compressedSize, int maxDecompressedSize) {
 			return LZ4_decompress_generic(source, dest, compressedSize, maxDecompressedSize,
 																	 endCondition_directive.endOnInputSize, earlyEnd_directive.decode_full_block, dict_directive.noDict,
 																		(byte*)dest, null, 0);
@@ -2995,6 +2995,99 @@ namespace IonKiwi.lz4 {
 			} while (s == 255);
 
 			return length;
+		}
+
+		// NOTE: translation: changed char* to byte*
+		internal static unsafe int LZ4_compress_default(byte* src, byte* dst, int srcSize, int maxOutputSize) {
+			return LZ4_compress_fast(src, dst, srcSize, maxOutputSize, 1);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_compress_fast(byte* source, byte* dest, int inputSize, int maxOutputSize, int acceleration) {
+
+			int result;
+			LZ4_stream ctx;
+			LZ4_stream* ctxPtr = &ctx;
+			result = LZ4_compress_fast_extState(ctxPtr, source, dest, inputSize, maxOutputSize, acceleration);
+
+			return result;
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_compress_fast_extState(void* state, byte* source, byte* dest, int inputSize, int maxOutputSize, int acceleration) {
+
+			LZ4_stream_t_internal* ctx = &LZ4_initStream(state, (uint)sizeof(LZ4_stream))->internal_donotuse;
+			Debug.Assert(ctx != null);
+			if (acceleration < 1) acceleration = ACCELERATION_DEFAULT;
+			if (maxOutputSize >= LZ4_compressBound(inputSize)) {
+				if (inputSize < LZ4_64Klimit) {
+					return LZ4_compress_generic(ctx, source, dest, inputSize, null, 0, limitedOutput_directive.notLimited, tableType_t.byU16, dict_directive.noDict, dictIssue_directive.noDictIssue, acceleration);
+				}
+				else {
+					// NOTE: translation: changed sizeof(void*) to IntPtr.Size && uptrval to uint 
+					tableType_t tableType = ((IntPtr.Size == 4) && ((uint)source > LZ4_DISTANCE_MAX)) ? tableType_t.byPtr : tableType_t.byU32;
+					return LZ4_compress_generic(ctx, source, dest, inputSize, null, 0, limitedOutput_directive.notLimited, tableType, dict_directive.noDict, dictIssue_directive.noDictIssue, acceleration);
+				}
+			}
+			else {
+				if (inputSize < LZ4_64Klimit) {
+					return LZ4_compress_generic(ctx, source, dest, inputSize, null, maxOutputSize, limitedOutput_directive.limitedOutput, tableType_t.byU16, dict_directive.noDict, dictIssue_directive.noDictIssue, acceleration);
+				}
+				else {
+					// NOTE: translation: changed sizeof(void*) to IntPtr.Size && uptrval to uint 
+					tableType_t tableType = ((IntPtr.Size == 4) && ((uint)source > LZ4_DISTANCE_MAX)) ? tableType_t.byPtr : tableType_t.byU32;
+					return LZ4_compress_generic(ctx, source, dest, inputSize, null, maxOutputSize, limitedOutput_directive.limitedOutput, tableType, dict_directive.noDict, dictIssue_directive.noDictIssue, acceleration);
+				}
+			}
+		}
+
+		// NOTE: translation: changed char* to byte*
+		internal static unsafe int LZ4_compress_HC(byte* src, byte* dst, int srcSize, int dstCapacity, int compressionLevel) {
+			LZ4_streamHC state;
+			LZ4_streamHC* statePtr = &state;
+			int cSize = LZ4_compress_HC_extStateHC(statePtr, src, dst, srcSize, dstCapacity, compressionLevel);
+			return cSize;
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_compress_HC_extStateHC(void* state, byte* src, byte* dst, int srcSize, int dstCapacity, int compressionLevel) {
+
+			LZ4_streamHC* ctx = LZ4_initStreamHC(state, (uint)sizeof(LZ4_streamHC));
+			if (ctx == null) return 0;   /* init failure */
+			return LZ4_compress_HC_extStateHC_fastReset(state, src, dst, srcSize, dstCapacity, compressionLevel);
+		}
+
+		// NOTE: translation: changed char* to byte*
+		private static unsafe int LZ4_compress_HC_extStateHC_fastReset(void* state, byte* src, byte* dst, int srcSize, int dstCapacity, int compressionLevel) {
+
+			LZ4HC_CCtx_internal* ctx = &((LZ4_streamHC*)state)->internal_donotuse;
+			if (((size_t)(state) & (sizeof(void*) - 1)) != 0) return 0;   /* Error : state is not aligned for pointers (32 or 64 bits) */
+			LZ4_resetStreamHC_fast((LZ4_streamHC*)state, compressionLevel);
+			LZ4HC_init_internal(ctx, (byte*)src);
+			if (dstCapacity < LZ4_compressBound(srcSize))
+				return LZ4HC_compress_generic(ctx, src, dst, &srcSize, dstCapacity, compressionLevel, limitedOutput_directive.limitedOutput);
+			else
+				return LZ4HC_compress_generic(ctx, src, dst, &srcSize, dstCapacity, compressionLevel, limitedOutput_directive.notLimited);
+		}
+
+		private static unsafe void LZ4_resetStreamHC_fast(LZ4_streamHC* LZ4_streamHCPtr, int compressionLevel) {
+			//DEBUGLOG(4, "LZ4_resetStreamHC_fast(%p, %d)", LZ4_streamHCPtr, compressionLevel);
+			if (LZ4_streamHCPtr->internal_donotuse.dirty != 0) {
+				LZ4_initStreamHC(LZ4_streamHCPtr, (uint)sizeof(LZ4_streamHC));
+			}
+			else {
+				/* preserve end - base : can trigger clearTable's threshold */
+				// NOTE: translation: changed uptrval to if
+				if (IntPtr.Size == 8)
+					LZ4_streamHCPtr->internal_donotuse.end -= (ulong)LZ4_streamHCPtr->internal_donotuse.baseAddr;
+				else if (IntPtr.Size == 4)
+					LZ4_streamHCPtr->internal_donotuse.end -= (uint)LZ4_streamHCPtr->internal_donotuse.baseAddr;
+				else
+					Debug.Fail("IntPtr.Size == " + IntPtr.Size);
+				LZ4_streamHCPtr->internal_donotuse.baseAddr = null;
+				LZ4_streamHCPtr->internal_donotuse.dictCtx = null;
+			}
+			LZ4_setCompressionLevel(LZ4_streamHCPtr, compressionLevel);
 		}
 	}
 }
