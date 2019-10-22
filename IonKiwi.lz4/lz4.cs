@@ -153,8 +153,12 @@ namespace IonKiwi.lz4 {
 				_handle = handle;
 			}
 
-			public static unsafe T* Alloc<T>(out IDisposable disposable) where T : unmanaged {
-				var handle = Marshal.AllocHGlobal(sizeof(T));
+			public static unsafe T* Alloc<T>(bool zero, out IDisposable disposable) where T : unmanaged {
+				int size = sizeof(T);
+				var handle = Marshal.AllocHGlobal(size);
+				if (zero) {
+					Unsafe.InitBlock((byte*)handle, 0, (uint)size);
+				}
 				disposable = new AllocWrapper(handle);
 				return (T*)handle;
 			}
@@ -165,7 +169,7 @@ namespace IonKiwi.lz4 {
 		}
 
 		internal static unsafe LZ4_stream* LZ4_createStream(out IDisposable disposable) {
-			var lz4s = AllocWrapper.Alloc<LZ4_stream>(out disposable);
+			var lz4s = AllocWrapper.Alloc<LZ4_stream>(false, out disposable);
 			//LZ4_STATIC_ASSERT(LZ4_STREAMSIZE >= sizeof(LZ4_stream_t_internal));    /* A compilation error here means LZ4_STREAMSIZE is not large enough */
 			//DEBUGLOG(4, "LZ4_createStream %p", lz4s);
 			if (lz4s == null) return null;
@@ -174,21 +178,21 @@ namespace IonKiwi.lz4 {
 		}
 
 		internal static unsafe LZ4_streamHC* LZ4_createStreamHC(out IDisposable disposable) {
-			var LZ4_streamHCPtr = AllocWrapper.Alloc<LZ4_streamHC>(out disposable);
+			var LZ4_streamHCPtr = AllocWrapper.Alloc<LZ4_streamHC>(false, out disposable);
 			if (LZ4_streamHCPtr == null) return null;
 			LZ4_initStreamHC(LZ4_streamHCPtr, (uint)sizeof(LZ4_streamHC));  /* full initialization, malloc'ed buffer can be full of garbage */
 			return LZ4_streamHCPtr;
 		}
 
 		internal static unsafe LZ4_streamDecode* LZ4_createStreamDecode(out IDisposable disposable) {
-			LZ4_streamDecode* lz4s = AllocWrapper.Alloc<LZ4_streamDecode>(out disposable);
+			LZ4_streamDecode* lz4s = AllocWrapper.Alloc<LZ4_streamDecode>(true, out disposable);
 			//LZ4_STATIC_ASSERT(LZ4_STREAMDECODESIZE >= sizeof(LZ4_streamDecode_t_internal));    /* A compilation error here means LZ4_STREAMDECODESIZE is not large enough */
 			return lz4s;
 		}
 
 		internal static unsafe XXH32_state* XXH32_createState(out IDisposable disposable) {
 			//return (XXH32_state_t*)XXH_malloc(sizeof(XXH32_state_t));
-			return AllocWrapper.Alloc<XXH32_state>(out disposable);
+			return AllocWrapper.Alloc<XXH32_state>(false, out disposable);
 		}
 
 		private static unsafe LZ4_stream* LZ4_initStream(void* buffer, size_t size) {
