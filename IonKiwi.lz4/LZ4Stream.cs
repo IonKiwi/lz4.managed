@@ -58,7 +58,7 @@ namespace IonKiwi.lz4 {
 		private bool _disposed;
 		private Stream _innerStream;
 
-		private byte[] _headerBuffer = new byte[23];
+		private byte[] _headerBuffer;
 		private int _headerBufferSize = 0;
 		private int _currentMode = 0;
 
@@ -368,22 +368,28 @@ namespace IonKiwi.lz4 {
 				FlushCurrentBlock(true);
 			}
 
-			byte[] b = new byte[4];
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// write end mark
+				int endMarkLength = 4;
+				buffer[0] = 0;
+				buffer[1] = 0;
+				buffer[2] = 0;
+				buffer[3] = 0; // 0x80
+				WriteHeaderData(buffer, 0, endMarkLength);
 
-			// write end mark
-			b[0] = 0;
-			b[1] = 0;
-			b[2] = 0;
-			b[3] = 0; // 0x80
-			WriteHeaderData(b, 0, b.Length);
-
-			if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
-				uint xxh = GetContentChecksum();
-				b[0] = (byte)(xxh & 0xFF);
-				b[1] = (byte)((xxh >> 8) & 0xFF);
-				b[2] = (byte)((xxh >> 16) & 0xFF);
-				b[3] = (byte)((xxh >> 24) & 0xFF);
-				WriteHeaderData(b, 0, b.Length);
+				if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
+					uint xxh = GetContentChecksum();
+					int contentChecksumLength = 4;
+					buffer[0] = (byte)(xxh & 0xFF);
+					buffer[1] = (byte)((xxh >> 8) & 0xFF);
+					buffer[2] = (byte)((xxh >> 16) & 0xFF);
+					buffer[3] = (byte)((xxh >> 24) & 0xFF);
+					WriteHeaderData(buffer, 0, contentChecksumLength);
+				}
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
 			}
 
 			// reset the stream
@@ -408,22 +414,28 @@ namespace IonKiwi.lz4 {
 				await FlushCurrentBlockAsync(true).ConfigureAwait(false);
 			}
 
-			byte[] b = new byte[4];
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// write end mark
+				int endMarkLength = 4;
+				buffer[0] = 0;
+				buffer[1] = 0;
+				buffer[2] = 0;
+				buffer[3] = 0; // 0x80
+				await WriteHeaderDataAsync(buffer, 0, endMarkLength).ConfigureAwait(false);
 
-			// write end mark
-			b[0] = 0;
-			b[1] = 0;
-			b[2] = 0;
-			b[3] = 0; // 0x80
-			await WriteHeaderDataAsync(b, 0, b.Length).ConfigureAwait(false);
-
-			if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
-				uint xxh = GetContentChecksum();
-				b[0] = (byte)(xxh & 0xFF);
-				b[1] = (byte)((xxh >> 8) & 0xFF);
-				b[2] = (byte)((xxh >> 16) & 0xFF);
-				b[3] = (byte)((xxh >> 24) & 0xFF);
-				await WriteHeaderDataAsync(b, 0, b.Length).ConfigureAwait(false);
+				if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
+					uint xxh = GetContentChecksum();
+					int contentChecksumLength = 4;
+					buffer[0] = (byte)(xxh & 0xFF);
+					buffer[1] = (byte)((xxh >> 8) & 0xFF);
+					buffer[2] = (byte)((xxh >> 16) & 0xFF);
+					buffer[3] = (byte)((xxh >> 24) & 0xFF);
+					await WriteHeaderDataAsync(buffer, 0, contentChecksumLength).ConfigureAwait(false);
+				}
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
 			}
 
 			// reset the stream
@@ -454,22 +466,26 @@ namespace IonKiwi.lz4 {
 			_blockCount = 0;
 			//_ringbufferOffset = 0;
 
-			// write magic
-			byte[] magic = new byte[4];
-			magic[0] = 0x04;
-			magic[1] = 0x22;
-			magic[2] = 0x4D;
-			magic[3] = 0x18;
-			WriteHeaderData(magic, 0, magic.Length);
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// write magic
+				int magicLength = 4;
+				buffer[0] = 0x04;
+				buffer[1] = 0x22;
+				buffer[2] = 0x4D;
+				buffer[3] = 0x18;
+				WriteHeaderData(buffer, 0, magicLength);
 
-			// frame descriptor
-			byte[] descriptor = CreateStartFrameDescriptor();
-			uint xxh = GetDescriptorChecksum(descriptor);
-
-			WriteHeaderData(descriptor, 0, descriptor.Length);
-			byte[] checksumByte = new byte[1];
-			checksumByte[0] = (byte)((xxh >> 8) & 0xFF);
-			WriteHeaderData(checksumByte, 0, 1);
+				// frame descriptor
+				int descriptorLength = 2;
+				CreateStartFrameDescriptor(buffer);
+				uint xxh = GetDescriptorChecksum(buffer, 0, (uint)descriptorLength);
+				buffer[descriptorLength] = (byte)((xxh >> 8) & 0xFF);
+				WriteHeaderData(buffer, 0, descriptorLength + 1);
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
+			}
 		}
 
 		private async PlatformTask WriteStartFrameAsync() {
@@ -479,26 +495,34 @@ namespace IonKiwi.lz4 {
 			_blockCount = 0;
 			//_ringbufferOffset = 0;
 
-			// write magic
-			byte[] magic = new byte[4];
-			magic[0] = 0x04;
-			magic[1] = 0x22;
-			magic[2] = 0x4D;
-			magic[3] = 0x18;
-			await WriteHeaderDataAsync(magic, 0, magic.Length).ConfigureAwait(false);
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// write magic
+				int magicLength = 4;
+				buffer[0] = 0x04;
+				buffer[1] = 0x22;
+				buffer[2] = 0x4D;
+				buffer[3] = 0x18;
+				await WriteHeaderDataAsync(buffer, 0, magicLength).ConfigureAwait(false);
 
-			// frame descriptor
-			byte[] descriptor = CreateStartFrameDescriptor();
-			uint xxh = GetDescriptorChecksum(descriptor);
-
-			await WriteHeaderDataAsync(descriptor, 0, descriptor.Length).ConfigureAwait(false);
-			byte[] checksumByte = new byte[1];
-			checksumByte[0] = (byte)((xxh >> 8) & 0xFF);
-			await WriteHeaderDataAsync(checksumByte, 0, 1).ConfigureAwait(false);
+				// frame descriptor
+				int descriptorLength = 2;
+				CreateStartFrameDescriptor(buffer);
+				uint xxh = GetDescriptorChecksum(buffer, 0, (uint)descriptorLength);
+				buffer[descriptorLength] = (byte)((xxh >> 8) & 0xFF);
+				await WriteHeaderDataAsync(buffer, 0, descriptorLength + 1).ConfigureAwait(false);
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
+			}
 		}
 
-		private byte[] CreateStartFrameDescriptor() {
-			byte[] descriptor = new byte[2]; // if _storeContentSize +8
+		private void CreateStartFrameDescriptor(byte[] descriptor) {
+			// if _storeContentSize +8
+			if (descriptor.Length < 2) {
+				throw new InvalidOperationException();
+			}
+
 			descriptor[0] = 0;
 			if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
 				descriptor[0] |= 0x4;
@@ -546,7 +570,6 @@ namespace IonKiwi.lz4 {
 			//	descriptor[8] = (byte)((contentsize >> 48) & 0xFF);
 			//	descriptor[9] = (byte)((contentsize >> 56) & 0xFF);
 			//}
-			return descriptor;
 		}
 
 		private unsafe void WriteEmptyFrame() {
@@ -556,25 +579,34 @@ namespace IonKiwi.lz4 {
 				throw new InvalidOperationException("should not have happend, hasWrittenStartFrame: " + _hasWrittenStartFrame + ", hasWrittenInitialStartFrame: " + _hasWrittenInitialStartFrame);
 			}
 
-			// write magic
-			byte[] magic = new byte[4];
-			magic[0] = 0x04;
-			magic[1] = 0x22;
-			magic[2] = 0x4D;
-			magic[3] = 0x18;
-			WriteHeaderData(magic, 0, magic.Length);
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// write magic
+				int magicLength = 4;
+				buffer[0] = 0x04;
+				buffer[1] = 0x22;
+				buffer[2] = 0x4D;
+				buffer[3] = 0x18;
+				WriteHeaderData(buffer, 0, magicLength);
 
-			// frame descriptor
-			byte[] descriptor = CreateEmptyFrameDescriptor();
-			uint xxh = GetDescriptorChecksum(descriptor);
+				// frame descriptor
+				int descriptorLength = 2;
+				CreateEmptyFrameDescriptor(buffer);
+				uint xxh = GetDescriptorChecksum(buffer, 0, (uint)descriptorLength);
+				buffer[descriptorLength] = (byte)((xxh >> 8) & 0xFF);
+				WriteHeaderData(buffer, 0, descriptorLength + 1);
 
-			WriteHeaderData(descriptor, 0, descriptor.Length);
-			byte[] checksumByte = new byte[1];
-			checksumByte[0] = (byte)((xxh >> 8) & 0xFF);
-			WriteHeaderData(checksumByte, 0, 1);
-
-			byte[] endMarker = new byte[4];
-			WriteHeaderData(endMarker, 0, endMarker.Length);
+				// end marker
+				int endMarkerLength = 4;
+				buffer[0] = 0x00;
+				buffer[1] = 0x00;
+				buffer[2] = 0x00;
+				buffer[3] = 0x00;
+				WriteHeaderData(buffer, 0, endMarkerLength);
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
+			}
 
 			_hasWrittenInitialStartFrame = true;
 			_frameCount++;
@@ -587,32 +619,43 @@ namespace IonKiwi.lz4 {
 				throw new InvalidOperationException("should not have happend, hasWrittenStartFrame: " + _hasWrittenStartFrame + ", hasWrittenInitialStartFrame: " + _hasWrittenInitialStartFrame);
 			}
 
-			// write magic
-			byte[] magic = new byte[4];
-			magic[0] = 0x04;
-			magic[1] = 0x22;
-			magic[2] = 0x4D;
-			magic[3] = 0x18;
-			await WriteHeaderDataAsync(magic, 0, magic.Length).ConfigureAwait(false);
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// write magic
+				int magicLength = 4;
+				buffer[0] = 0x04;
+				buffer[1] = 0x22;
+				buffer[2] = 0x4D;
+				buffer[3] = 0x18;
+				await WriteHeaderDataAsync(buffer, 0, magicLength).ConfigureAwait(false);
 
-			// frame descriptor
-			byte[] descriptor = CreateEmptyFrameDescriptor();
-			uint xxh = GetDescriptorChecksum(descriptor);
+				// frame descriptor
+				int descriptorLength = 2;
+				CreateEmptyFrameDescriptor(buffer);
+				uint xxh = GetDescriptorChecksum(buffer, 0, (uint)descriptorLength);
+				buffer[descriptorLength] = (byte)((xxh >> 8) & 0xFF);
+				await WriteHeaderDataAsync(buffer, 0, descriptorLength + 1).ConfigureAwait(false);
 
-			await WriteHeaderDataAsync(descriptor, 0, descriptor.Length).ConfigureAwait(false);
-			byte[] checksumByte = new byte[1];
-			checksumByte[0] = (byte)((xxh >> 8) & 0xFF);
-			await WriteHeaderDataAsync(checksumByte, 0, 1).ConfigureAwait(false);
-
-			byte[] endMarker = new byte[4];
-			await WriteHeaderDataAsync(endMarker, 0, endMarker.Length).ConfigureAwait(false);
+				// end marker
+				int endMarkerLength = 4;
+				buffer[0] = 0x00;
+				buffer[1] = 0x00;
+				buffer[2] = 0x00;
+				buffer[3] = 0x00;
+				await WriteHeaderDataAsync(buffer, 0, endMarkerLength).ConfigureAwait(false);
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
+			}
 
 			_hasWrittenInitialStartFrame = true;
 			_frameCount++;
 		}
 
-		private byte[] CreateEmptyFrameDescriptor() {
-			byte[] descriptor = new byte[2];
+		private void CreateEmptyFrameDescriptor(byte[] descriptor) {
+			if (descriptor.Length < 2) {
+				throw new InvalidOperationException();
+			}
 			descriptor[0] = 0;
 			if (_blockMode == LZ4FrameBlockMode.Independent) { descriptor[0] |= 0x20; }
 			descriptor[0] |= 0x40; // version 01
@@ -633,12 +676,11 @@ namespace IonKiwi.lz4 {
 			else {
 				throw new NotImplementedException(_blockSize.ToString());
 			}
-			return descriptor;
 		}
 
-		private unsafe uint GetDescriptorChecksum(byte[] descriptor) {
-			fixed (byte* descriptorPtr = &descriptor[0]) {
-				return lz4.XXH32(descriptorPtr, (uint)descriptor.Length, 0);
+		private unsafe uint GetDescriptorChecksum(byte[] descriptor, int offset, uint length) {
+			fixed (byte* descriptorPtr = &descriptor[offset]) {
+				return lz4.XXH32(descriptorPtr, length, 0);
 			}
 		}
 
@@ -658,12 +700,12 @@ namespace IonKiwi.lz4 {
 			return WriteUserDataFrameInternalAsync(id, buffer, offset, count);
 		}
 
-		private void WriteUserDataFrameInternal(int id, byte[] buffer, int offset, int count) {
+		private void WriteUserDataFrameInternal(int id, byte[] data, int offset, int count) {
 			if (id < 0 || id > 15) { throw new ArgumentOutOfRangeException("id"); }
-			else if (buffer == null) { throw new ArgumentNullException("buffer"); }
+			else if (data == null) { throw new ArgumentNullException("buffer"); }
 			else if (count < 0) { throw new ArgumentOutOfRangeException("count"); }
 			else if (offset < 0) { throw new ArgumentOutOfRangeException("offset"); }
-			else if (offset + count > buffer.Length) { throw new ArgumentOutOfRangeException("offset + count"); }
+			else if (offset + count > data.Length) { throw new ArgumentOutOfRangeException("offset + count"); }
 
 			if (!_hasWrittenInitialStartFrame) {
 				// write empty frame according to spec recommendation
@@ -674,34 +716,40 @@ namespace IonKiwi.lz4 {
 				WriteEndFrameInternal();
 			}
 
-			// write magic
-			byte[] magic = new byte[4];
-			magic[0] = (byte)(0x50 + id);
-			magic[1] = 0x2A;
-			magic[2] = 0x4D;
-			magic[3] = 0x18;
-			_innerStream.Write(magic, 0, magic.Length);
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// write magic
+				int magicLength = 4;
+				buffer[0] = (byte)(0x50 + id);
+				buffer[1] = 0x2A;
+				buffer[2] = 0x4D;
+				buffer[3] = 0x18;
+				_innerStream.Write(buffer, 0, magicLength);
 
-			// write size
-			byte[] b = new byte[4];
-			b[0] = (byte)((uint)count & 0xFF);
-			b[1] = (byte)(((uint)count >> 8) & 0xFF);
-			b[2] = (byte)(((uint)count >> 16) & 0xFF);
-			b[3] = (byte)(((uint)count >> 24) & 0xFF);
-			_innerStream.Write(b, 0, b.Length);
+				// write size
+				int sizeLength = 4;
+				buffer[0] = (byte)((uint)count & 0xFF);
+				buffer[1] = (byte)(((uint)count >> 8) & 0xFF);
+				buffer[2] = (byte)(((uint)count >> 16) & 0xFF);
+				buffer[3] = (byte)(((uint)count >> 24) & 0xFF);
+				_innerStream.Write(buffer, 0, sizeLength);
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
+			}
 
 			// write data
-			_innerStream.Write(buffer, offset, count);
+			_innerStream.Write(data, offset, count);
 
 			_frameCount++;
 		}
 
-		private async PlatformTask WriteUserDataFrameInternalAsync(int id, byte[] buffer, int offset, int count) {
+		private async PlatformTask WriteUserDataFrameInternalAsync(int id, byte[] data, int offset, int count) {
 			if (id < 0 || id > 15) { throw new ArgumentOutOfRangeException("id"); }
-			else if (buffer == null) { throw new ArgumentNullException("buffer"); }
+			else if (data == null) { throw new ArgumentNullException("buffer"); }
 			else if (count < 0) { throw new ArgumentOutOfRangeException("count"); }
 			else if (offset < 0) { throw new ArgumentOutOfRangeException("offset"); }
-			else if (offset + count > buffer.Length) { throw new ArgumentOutOfRangeException("offset + count"); }
+			else if (offset + count > data.Length) { throw new ArgumentOutOfRangeException("offset + count"); }
 
 			if (!_hasWrittenInitialStartFrame) {
 				// write empty frame according to spec recommendation
@@ -712,24 +760,30 @@ namespace IonKiwi.lz4 {
 				await WriteEndFrameInternalAsync().ConfigureAwait(false);
 			}
 
-			// write magic
-			byte[] magic = new byte[4];
-			magic[0] = (byte)(0x50 + id);
-			magic[1] = 0x2A;
-			magic[2] = 0x4D;
-			magic[3] = 0x18;
-			await _innerStream.WriteAsync(magic, 0, magic.Length).ConfigureAwait(false);
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// write magic
+				int magicLength = 4;
+				buffer[0] = (byte)(0x50 + id);
+				buffer[1] = 0x2A;
+				buffer[2] = 0x4D;
+				buffer[3] = 0x18;
+				await _innerStream.WriteAsync(buffer, 0, magicLength).ConfigureAwait(false);
 
-			// write size
-			byte[] b = new byte[4];
-			b[0] = (byte)((uint)count & 0xFF);
-			b[1] = (byte)(((uint)count >> 8) & 0xFF);
-			b[2] = (byte)(((uint)count >> 16) & 0xFF);
-			b[3] = (byte)(((uint)count >> 24) & 0xFF);
-			await _innerStream.WriteAsync(b, 0, b.Length).ConfigureAwait(false);
+				// write size
+				int sizeLength = 4;
+				buffer[0] = (byte)((uint)count & 0xFF);
+				buffer[1] = (byte)(((uint)count >> 8) & 0xFF);
+				buffer[2] = (byte)(((uint)count >> 16) & 0xFF);
+				buffer[3] = (byte)(((uint)count >> 24) & 0xFF);
+				await _innerStream.WriteAsync(buffer, 0, sizeLength).ConfigureAwait(false);
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
+			}
 
 			// write data
-			await _innerStream.WriteAsync(buffer, offset, count).ConfigureAwait(false);
+			await _innerStream.WriteAsync(data, offset, count).ConfigureAwait(false);
 
 			_frameCount++;
 		}
@@ -798,26 +852,31 @@ namespace IonKiwi.lz4 {
 				isCompressed = true;
 			}
 
-			byte[] b = new byte[4];
-			b[0] = (byte)((uint)targetSize & 0xFF);
-			b[1] = (byte)(((uint)targetSize >> 8) & 0xFF);
-			b[2] = (byte)(((uint)targetSize >> 16) & 0xFF);
-			b[3] = (byte)(((uint)targetSize >> 24) & 0xFF);
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				buffer[0] = (byte)((uint)targetSize & 0xFF);
+				buffer[1] = (byte)(((uint)targetSize >> 8) & 0xFF);
+				buffer[2] = (byte)(((uint)targetSize >> 16) & 0xFF);
+				buffer[3] = (byte)(((uint)targetSize >> 24) & 0xFF);
 
-			if (!isCompressed) {
-				b[3] |= 0x80;
+				if (!isCompressed) {
+					buffer[3] |= 0x80;
+				}
+
+				_innerStream.Write(buffer, 0, 4);
+				_innerStream.Write(_outputBufferRef, 0, targetSize);
+
+				if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
+					uint xxh = GetBlockChecksumOutputBuffer((uint)targetSize);
+					buffer[0] = (byte)(xxh & 0xFF);
+					buffer[1] = (byte)((xxh >> 8) & 0xFF);
+					buffer[2] = (byte)((xxh >> 16) & 0xFF);
+					buffer[3] = (byte)((xxh >> 24) & 0xFF);
+					_innerStream.Write(buffer, 0, 4);
+				}
 			}
-
-			_innerStream.Write(b, 0, b.Length);
-			_innerStream.Write(_outputBufferRef, 0, targetSize);
-
-			if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
-				uint xxh = GetBlockChecksumOutputBuffer((uint)targetSize);
-				b[0] = (byte)(xxh & 0xFF);
-				b[1] = (byte)((xxh >> 8) & 0xFF);
-				b[2] = (byte)((xxh >> 16) & 0xFF);
-				b[3] = (byte)((xxh >> 24) & 0xFF);
-				_innerStream.Write(b, 0, b.Length);
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
 			}
 
 			_inputBufferOffset = 0; // reset before calling WriteEndFrame() !!
@@ -897,26 +956,31 @@ namespace IonKiwi.lz4 {
 				isCompressed = true;
 			}
 
-			byte[] b = new byte[4];
-			b[0] = (byte)((uint)targetSize & 0xFF);
-			b[1] = (byte)(((uint)targetSize >> 8) & 0xFF);
-			b[2] = (byte)(((uint)targetSize >> 16) & 0xFF);
-			b[3] = (byte)(((uint)targetSize >> 24) & 0xFF);
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				buffer[0] = (byte)((uint)targetSize & 0xFF);
+				buffer[1] = (byte)(((uint)targetSize >> 8) & 0xFF);
+				buffer[2] = (byte)(((uint)targetSize >> 16) & 0xFF);
+				buffer[3] = (byte)(((uint)targetSize >> 24) & 0xFF);
 
-			if (!isCompressed) {
-				b[3] |= 0x80;
+				if (!isCompressed) {
+					buffer[3] |= 0x80;
+				}
+
+				await _innerStream.WriteAsync(buffer, 0, 4).ConfigureAwait(false);
+				await _innerStream.WriteAsync(_outputBufferRef, 0, targetSize).ConfigureAwait(false);
+
+				if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
+					uint xxh = GetBlockChecksumOutputBuffer((uint)targetSize);
+					buffer[0] = (byte)(xxh & 0xFF);
+					buffer[1] = (byte)((xxh >> 8) & 0xFF);
+					buffer[2] = (byte)((xxh >> 16) & 0xFF);
+					buffer[3] = (byte)((xxh >> 24) & 0xFF);
+					await _innerStream.WriteAsync(buffer, 0, 4).ConfigureAwait(false);
+				}
 			}
-
-			await _innerStream.WriteAsync(b, 0, b.Length).ConfigureAwait(false);
-			await _innerStream.WriteAsync(_outputBufferRef, 0, targetSize).ConfigureAwait(false);
-
-			if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
-				uint xxh = GetBlockChecksumOutputBuffer((uint)targetSize);
-				b[0] = (byte)(xxh & 0xFF);
-				b[1] = (byte)((xxh >> 8) & 0xFF);
-				b[2] = (byte)((xxh >> 16) & 0xFF);
-				b[3] = (byte)((xxh >> 24) & 0xFF);
-				await _innerStream.WriteAsync(b, 0, b.Length).ConfigureAwait(false);
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
 			}
 
 			_inputBufferOffset = 0; // reset before calling WriteEndFrame() !!
@@ -955,99 +1019,107 @@ namespace IonKiwi.lz4 {
 				throw new Exception("should not have happend, _hasFrameInfo: " + _hasFrameInfo);
 			}
 
-			byte[] magic = new byte[4];
-			int bytesRead = _innerStream.Read(magic, 0, magic.Length);
-			if (bytesRead == 0) {
-				return false;
-			}
-			else if (bytesRead != magic.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
+			int magicLength = 4;
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(15);
+			try {
+				int bytesRead = _innerStream.Read(buffer, 0, magicLength);
+				if (bytesRead == 0) {
+					return false;
+				}
+				else if (bytesRead != magicLength) { throw new EndOfStreamException("Unexpected end of stream"); }
 
-			_blockCount = 0;
-			if (magic[0] == 0x04 && magic[1] == 0x22 && magic[2] == 0x4D && magic[3] == 0x18) {
-				// lz4 frame
-				_frameCount++;
+				_blockCount = 0;
+				if (buffer[0] == 0x04 && buffer[1] == 0x22 && buffer[2] == 0x4D && buffer[3] == 0x18) {
+					// lz4 frame
+					_frameCount++;
 
-				// reset state
-				ResetContentChecksumState();
-				_blockSize = LZ4FrameBlockSize.Max64KB;
-				_blockMode = LZ4FrameBlockMode.Linked;
-				_checksumMode = LZ4FrameChecksumMode.None;
-				_contentSize = 0;
-				_outputBufferOffset = 0;
-				_outputBufferBlockSize = 0;
-				//_ringbufferOffset = 0;
-
-				// read frame descriptor
-				byte[] descriptor = new byte[2];
-				bytesRead = _innerStream.Read(descriptor, 0, descriptor.Length);
-				if (bytesRead != descriptor.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-
-				HandleFrameDescriptor(descriptor, out var hasContentSize);
-
-				if (hasContentSize) {
-					byte tmp1 = descriptor[0], tmp2 = descriptor[1];
-					descriptor = new byte[2 + 8];
-					descriptor[0] = tmp1;
-					descriptor[1] = tmp2;
-					bytesRead = _innerStream.Read(descriptor, 2, 8);
-					if (bytesRead != 8) { throw new EndOfStreamException("Unexpected end of stream"); }
-
+					// reset state
+					ResetContentChecksumState();
+					_blockSize = LZ4FrameBlockSize.Max64KB;
+					_blockMode = LZ4FrameBlockMode.Linked;
+					_checksumMode = LZ4FrameChecksumMode.None;
 					_contentSize = 0;
-					for (int i = 9; i >= 2; i--) {
-						_contentSize |= ((ulong)descriptor[i] << (i * 8));
+					_outputBufferOffset = 0;
+					_outputBufferBlockSize = 0;
+					//_ringbufferOffset = 0;
+
+					// read frame descriptor
+					int descriptorLength = 2;
+					int descriptorOffset = magicLength;
+					bytesRead = _innerStream.Read(buffer, descriptorOffset, descriptorLength);
+					if (bytesRead != descriptorLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+					HandleFrameDescriptor(buffer, descriptorOffset, out var hasContentSize);
+
+					int bufferOffset = descriptorOffset + descriptorLength;
+					if (hasContentSize) {
+						int contentSizeLength = 8;
+						descriptorLength += contentSizeLength;
+						bytesRead = _innerStream.Read(buffer, bufferOffset, contentSizeLength);
+						if (bytesRead != contentSizeLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+						_contentSize = 0;
+						for (int i = bufferOffset, ii = 0; i < bufferOffset + contentSizeLength; i++, ii++) {
+							_contentSize |= ((ulong)buffer[i] << (ii * 8));
+						}
+						bufferOffset += contentSizeLength;
 					}
+
+					// read checksum
+					int checksumLength = 1;
+					bytesRead = _innerStream.Read(buffer, bufferOffset, checksumLength);
+					if (bytesRead != checksumLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+					// verify checksum
+					uint xxh = GetDescriptorChecksum(buffer, descriptorOffset, (uint)descriptorLength);
+					byte checksumByte = (byte)((xxh >> 8) & 0xFF);
+					if (buffer[bufferOffset] != checksumByte) {
+						throw new Exception("Frame checksum is invalid");
+					}
+
+					// resize buffers
+					ResizeBuffers();
+
+					_hasFrameInfo = true;
+					return true;
 				}
+				else if (buffer[0] >= 0x50 && buffer[0] <= 0x5f && buffer[1] == 0x2A && buffer[2] == 0x4D && buffer[3] == 0x18) {
+					// skippable frame
+					_frameCount++;
 
-				// read checksum
-				byte[] checksum = new byte[1];
-				bytesRead = _innerStream.Read(checksum, 0, checksum.Length);
-				if (bytesRead != checksum.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-				// verify checksum
-				uint xxh = GetDescriptorChecksum(descriptor);
-				byte checksumByte = (byte)((xxh >> 8) & 0xFF);
-				if (checksum[0] != checksumByte) {
-					throw new Exception("Frame checksum is invalid");
+					// read frame size
+					int bufferOffset = magicLength;
+					int frameSizeLength = 4;
+					bytesRead = _innerStream.Read(buffer, bufferOffset, frameSizeLength);
+					if (bytesRead != frameSizeLength) {
+						throw new EndOfStreamException("Unexpected end of stream");
+					}
+
+					uint frameSize = 0;
+					for (int i = bufferOffset, ii = 0; i < bufferOffset + frameSizeLength; i++, ii++) {
+						frameSize |= ((uint)buffer[i] << (ii * 8));
+					}
+
+					byte[] userData = new byte[frameSize];
+					bytesRead = _innerStream.Read(userData, 0, userData.Length);
+					if (bytesRead != userData.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+					int id = (buffer[0] & 0xF);
+
+					var handler = UserDataFrameRead;
+					if (handler != null) {
+						LZ4UserDataFrameEventArgs e = new LZ4UserDataFrameEventArgs(id, userData);
+						handler(this, e);
+					}
+
+					// read next frame header
+					return GetFrameInfo();
 				}
-
-				// resize buffers
-				ResizeBuffers();
-
-				_hasFrameInfo = true;
-				return true;
+				else {
+					throw new Exception("lz4 stream is corrupt");
+				}
 			}
-			else if (magic[0] >= 0x50 && magic[0] <= 0x5f && magic[1] == 0x2A && magic[2] == 0x4D && magic[3] == 0x18) {
-				// skippable frame
-				_frameCount++;
-
-				// read frame size
-				byte[] b = new byte[4];
-				bytesRead = _innerStream.Read(b, 0, b.Length);
-				if (bytesRead != b.Length) {
-					throw new EndOfStreamException("Unexpected end of stream");
-				}
-
-				uint frameSize = 0;
-				for (int i = b.Length - 1; i >= 0; i--) {
-					frameSize |= ((uint)b[i] << (i * 8));
-				}
-
-				byte[] userData = new byte[frameSize];
-				bytesRead = _innerStream.Read(userData, 0, userData.Length);
-				if (bytesRead != userData.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-
-				int id = (magic[0] & 0xF);
-
-				var handler = UserDataFrameRead;
-				if (handler != null) {
-					LZ4UserDataFrameEventArgs e = new LZ4UserDataFrameEventArgs(id, userData);
-					handler(this, e);
-				}
-
-				// read next frame header
-				return GetFrameInfo();
-			}
-			else {
-				throw new Exception("lz4 stream is corrupt");
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
 			}
 		}
 
@@ -1057,139 +1129,147 @@ namespace IonKiwi.lz4 {
 				throw new Exception("should not have happend, _hasFrameInfo: " + _hasFrameInfo);
 			}
 
-			byte[] magic = new byte[4];
-			int bytesRead = await _innerStream.ReadAsync(magic, 0, magic.Length).ConfigureAwait(false);
-			if (bytesRead == 0) {
-				return false;
-			}
-			else if (bytesRead != magic.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
+			int magicLength = 4;
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(15);
+			try {
+				int bytesRead = await _innerStream.ReadAsync(buffer, 0, magicLength).ConfigureAwait(false);
+				if (bytesRead == 0) {
+					return false;
+				}
+				else if (bytesRead != magicLength) { throw new EndOfStreamException("Unexpected end of stream"); }
 
-			_blockCount = 0;
-			if (magic[0] == 0x04 && magic[1] == 0x22 && magic[2] == 0x4D && magic[3] == 0x18) {
-				// lz4 frame
-				_frameCount++;
+				_blockCount = 0;
+				if (buffer[0] == 0x04 && buffer[1] == 0x22 && buffer[2] == 0x4D && buffer[3] == 0x18) {
+					// lz4 frame
+					_frameCount++;
 
-				// reset state
-				ResetContentChecksumState();
-				_blockSize = LZ4FrameBlockSize.Max64KB;
-				_blockMode = LZ4FrameBlockMode.Linked;
-				_checksumMode = LZ4FrameChecksumMode.None;
-				_contentSize = 0;
-				_outputBufferOffset = 0;
-				_outputBufferBlockSize = 0;
-				//_ringbufferOffset = 0;
-
-				// read frame descriptor
-				byte[] descriptor = new byte[2];
-				bytesRead = await _innerStream.ReadAsync(descriptor, 0, descriptor.Length).ConfigureAwait(false);
-				if (bytesRead != descriptor.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-
-				HandleFrameDescriptor(descriptor, out var hasContentSize);
-
-				if (hasContentSize) {
-					byte tmp1 = descriptor[0], tmp2 = descriptor[1];
-					descriptor = new byte[2 + 8];
-					descriptor[0] = tmp1;
-					descriptor[1] = tmp2;
-					bytesRead = await _innerStream.ReadAsync(descriptor, 2, 8).ConfigureAwait(false);
-					if (bytesRead != 8) { throw new EndOfStreamException("Unexpected end of stream"); }
-
+					// reset state
+					ResetContentChecksumState();
+					_blockSize = LZ4FrameBlockSize.Max64KB;
+					_blockMode = LZ4FrameBlockMode.Linked;
+					_checksumMode = LZ4FrameChecksumMode.None;
 					_contentSize = 0;
-					for (int i = 9; i >= 2; i--) {
-						_contentSize |= ((ulong)descriptor[i] << (i * 8));
+					_outputBufferOffset = 0;
+					_outputBufferBlockSize = 0;
+					//_ringbufferOffset = 0;
+
+					// read frame descriptor
+					int descriptorLength = 2;
+					int descriptorOffset = magicLength;
+					bytesRead = await _innerStream.ReadAsync(buffer, descriptorOffset, descriptorLength).ConfigureAwait(false);
+					if (bytesRead != descriptorLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+					HandleFrameDescriptor(buffer, descriptorOffset, out var hasContentSize);
+
+					int bufferOffset = descriptorOffset + descriptorLength;
+					if (hasContentSize) {
+						int contentSizeLength = 8;
+						descriptorLength += contentSizeLength;
+						bytesRead = await _innerStream.ReadAsync(buffer, bufferOffset, contentSizeLength).ConfigureAwait(false);
+						if (bytesRead != contentSizeLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+						_contentSize = 0;
+						for (int i = bufferOffset, ii = 0; i < bufferOffset + contentSizeLength; i++, ii++) {
+							_contentSize |= ((ulong)buffer[i] << (ii * 8));
+						}
+						bufferOffset += contentSizeLength;
 					}
+
+					// read checksum
+					int checksumLength = 1;
+					bytesRead = await _innerStream.ReadAsync(buffer, bufferOffset, checksumLength).ConfigureAwait(false);
+					if (bytesRead != checksumLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+					// verify checksum
+					uint xxh = GetDescriptorChecksum(buffer, descriptorOffset, (uint)descriptorLength);
+					byte checksumByte = (byte)((xxh >> 8) & 0xFF);
+					if (buffer[bufferOffset] != checksumByte) {
+						throw new Exception("Frame checksum is invalid");
+					}
+
+					// resize buffers
+					ResizeBuffers();
+
+					_hasFrameInfo = true;
+					return true;
 				}
+				else if (buffer[0] >= 0x50 && buffer[0] <= 0x5f && buffer[1] == 0x2A && buffer[2] == 0x4D && buffer[3] == 0x18) {
+					// skippable frame
+					_frameCount++;
 
-				// read checksum
-				byte[] checksum = new byte[1];
-				bytesRead = await _innerStream.ReadAsync(checksum, 0, checksum.Length).ConfigureAwait(false);
-				if (bytesRead != checksum.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-				// verify checksum
-				uint xxh = GetDescriptorChecksum(descriptor);
-				byte checksumByte = (byte)((xxh >> 8) & 0xFF);
-				if (checksum[0] != checksumByte) {
-					throw new Exception("Frame checksum is invalid");
+					// read frame size
+					int bufferOffset = 4;
+					int frameSizeLength = 4;
+					bytesRead = await _innerStream.ReadAsync(buffer, bufferOffset, frameSizeLength).ConfigureAwait(false);
+					if (bytesRead != frameSizeLength) {
+						throw new EndOfStreamException("Unexpected end of stream");
+					}
+
+					uint frameSize = 0;
+					for (int i = bufferOffset, ii = 0; i < bufferOffset + frameSizeLength; i++, ii++) {
+						frameSize |= ((uint)buffer[i] << (ii * 8));
+					}
+
+					byte[] userData = new byte[frameSize];
+					bytesRead = await _innerStream.ReadAsync(userData, 0, userData.Length).ConfigureAwait(false);
+					if (bytesRead != userData.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+					int id = (buffer[0] & 0xF);
+
+					var handler = UserDataFrameRead;
+					if (handler != null) {
+						LZ4UserDataFrameEventArgs e = new LZ4UserDataFrameEventArgs(id, userData);
+						handler(this, e);
+					}
+
+					// read next frame header
+					return await GetFrameInfoAsync().ConfigureAwait(false);
 				}
-
-				// resize buffers
-				ResizeBuffers();
-
-				_hasFrameInfo = true;
-				return true;
+				else {
+					throw new Exception("lz4 stream is corrupt");
+				}
 			}
-			else if (magic[0] >= 0x50 && magic[0] <= 0x5f && magic[1] == 0x2A && magic[2] == 0x4D && magic[3] == 0x18) {
-				// skippable frame
-				_frameCount++;
-
-				// read frame size
-				byte[] b = new byte[4];
-				bytesRead = await _innerStream.ReadAsync(b, 0, b.Length).ConfigureAwait(false);
-				if (bytesRead != b.Length) {
-					throw new EndOfStreamException("Unexpected end of stream");
-				}
-
-				uint frameSize = 0;
-				for (int i = b.Length - 1; i >= 0; i--) {
-					frameSize |= ((uint)b[i] << (i * 8));
-				}
-
-				byte[] userData = new byte[frameSize];
-				bytesRead = await _innerStream.ReadAsync(userData, 0, userData.Length).ConfigureAwait(false);
-				if (bytesRead != userData.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-
-				int id = (magic[0] & 0xF);
-
-				var handler = UserDataFrameRead;
-				if (handler != null) {
-					LZ4UserDataFrameEventArgs e = new LZ4UserDataFrameEventArgs(id, userData);
-					handler(this, e);
-				}
-
-				// read next frame header
-				return await GetFrameInfoAsync().ConfigureAwait(false);
-			}
-			else {
-				throw new Exception("lz4 stream is corrupt");
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
 			}
 		}
 
-		private void HandleFrameDescriptor(byte[] descriptor, out bool hasContentSize) {
+		private void HandleFrameDescriptor(byte[] descriptor, int offset, out bool hasContentSize) {
 			// verify version
-			if (!((descriptor[0] & 0x40) == 0x40 || (descriptor[0] & 0x60) == 0x60) || (descriptor[0] & 0x80) != 0x00) {
+			if (!((descriptor[offset] & 0x40) == 0x40 || (descriptor[offset] & 0x60) == 0x60) || (descriptor[offset] & 0x80) != 0x00) {
 				throw new Exception("Unexpected frame version");
 			}
-			else if ((descriptor[0] & 0x01) != 0x00) {
+			else if ((descriptor[offset] & 0x01) != 0x00) {
 				throw new Exception("Predefined dictionaries are not supported");
 			}
-			else if ((descriptor[0] & 0x02) != 0x00) {
+			else if ((descriptor[offset] & 0x02) != 0x00) {
 				// reserved value
 				throw new Exception("Header contains unexpected value");
 			}
 
-			if ((descriptor[0] & 0x04) == 0x04) {
+			if ((descriptor[offset] & 0x04) == 0x04) {
 				_checksumMode = _checksumMode | LZ4FrameChecksumMode.Content;
 			}
 			hasContentSize = false;
-			if ((descriptor[0] & 0x08) == 0x08) {
+			if ((descriptor[offset] & 0x08) == 0x08) {
 				hasContentSize = true;
 			}
-			if ((descriptor[0] & 0x10) == 0x10) {
+			if ((descriptor[offset] & 0x10) == 0x10) {
 				_checksumMode = _checksumMode | LZ4FrameChecksumMode.Block;
 			}
-			if ((descriptor[0] & 0x20) == 0x20) {
+			if ((descriptor[offset] & 0x20) == 0x20) {
 				_blockMode = LZ4FrameBlockMode.Independent;
 			}
 
-			if ((descriptor[1] & 0x0F) != 0x00) {
+			if ((descriptor[offset + 1] & 0x0F) != 0x00) {
 				// reserved value
 				throw new Exception("Header contains unexpected value");
 			}
-			else if ((descriptor[1] & 0x80) != 0x00) {
+			else if ((descriptor[offset + 1] & 0x80) != 0x00) {
 				// reserved value
 				throw new Exception("Header contains unexpected value");
 			}
 
-			int blockSizeId = (descriptor[1] & 0x70) >> 4;
+			int blockSizeId = (descriptor[offset + 1] & 0x70) >> 4;
 			if (blockSizeId == 4) {
 				_blockSize = LZ4FrameBlockSize.Max64KB;
 				_inputBufferSize = 64 * (1 << 10);
@@ -1243,21 +1323,27 @@ namespace IonKiwi.lz4 {
 				}
 			}
 
-			byte[] b = new byte[4];
-
-			// read block size
-			int bytesRead = _innerStream.Read(b, 0, b.Length);
-			if (bytesRead != b.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-
-			bool isCompressed = true;
-			if ((b[3] & 0x80) == 0x80) {
-				isCompressed = false;
-				b[3] &= 0x7F;
-			}
-
 			uint blockSize = 0;
-			for (int i = b.Length - 1; i >= 0; i--) {
-				blockSize |= ((uint)b[i] << (i * 8));
+			bool isCompressed = true;
+			int bytesRead;
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// read block size
+				int blockSizeLength = 4;
+				bytesRead = _innerStream.Read(buffer, 0, blockSizeLength);
+				if (bytesRead != blockSizeLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+				if ((buffer[3] & 0x80) == 0x80) {
+					isCompressed = false;
+					buffer[3] &= 0x7F;
+				}
+
+				for (int i = 0, ii = 0; i < blockSizeLength; i++, ii++) {
+					blockSize |= ((uint)buffer[i] << (ii * 8));
+				}
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
 			}
 
 			if (blockSize > (uint)_outputBufferSize) {
@@ -1278,18 +1364,24 @@ namespace IonKiwi.lz4 {
 					// calculate hash
 					uint xxh = GetContentChecksumNoReset();
 
-					// read hash
-					b = new byte[4];
-					bytesRead = _innerStream.Read(b, 0, b.Length);
-					if (bytesRead != b.Length) {
-						throw new EndOfStreamException("Unexpected end of stream");
-					}
+					buffer = ArrayPool<byte>.Shared.Rent(4);
+					try {
+						// read hash
+						int hashLength = 4;
+						bytesRead = _innerStream.Read(buffer, 0, hashLength);
+						if (bytesRead != hashLength) {
+							throw new EndOfStreamException("Unexpected end of stream");
+						}
 
-					if (b[0] != (byte)(xxh & 0xFF) ||
-						b[1] != (byte)((xxh >> 8) & 0xFF) ||
-						b[2] != (byte)((xxh >> 16) & 0xFF) ||
-						b[3] != (byte)((xxh >> 24) & 0xFF)) {
-						throw new Exception("Content checksum did not match");
+						if (buffer[0] != (byte)(xxh & 0xFF) ||
+							buffer[1] != (byte)((xxh >> 8) & 0xFF) ||
+							buffer[2] != (byte)((xxh >> 16) & 0xFF) ||
+							buffer[3] != (byte)((xxh >> 24) & 0xFF)) {
+							throw new Exception("Content checksum did not match");
+						}
+					}
+					finally {
+						ArrayPool<byte>.Shared.Return(buffer);
 					}
 				}
 
@@ -1303,14 +1395,20 @@ namespace IonKiwi.lz4 {
 			_blockCount++;
 
 			if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
-				// read block checksum
-				b = new byte[4];
-				bytesRead = _innerStream.Read(b, 0, b.Length);
-				if (bytesRead != b.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-
 				uint checksum = 0;
-				for (int i = b.Length - 1; i >= 0; i--) {
-					checksum |= ((uint)b[i] << (i * 8));
+				buffer = ArrayPool<byte>.Shared.Rent(4);
+				try {
+					// read block checksum
+					int blockChecksumLength = 4;
+					bytesRead = _innerStream.Read(buffer, 0, blockChecksumLength);
+					if (bytesRead != blockChecksumLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+					for (int i = blockChecksumLength - 1; i >= 0; i--) {
+						checksum |= ((uint)buffer[i] << (i * 8));
+					}
+				}
+				finally {
+					ArrayPool<byte>.Shared.Return(buffer);
 				}
 				// verify checksum
 				uint xxh = GetBlockChecksumInputBuffer(blockSize);
@@ -1357,21 +1455,27 @@ namespace IonKiwi.lz4 {
 				}
 			}
 
-			byte[] b = new byte[4];
-
-			// read block size
-			int bytesRead = await _innerStream.ReadAsync(b, 0, b.Length).ConfigureAwait(false);
-			if (bytesRead != b.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-
-			bool isCompressed = true;
-			if ((b[3] & 0x80) == 0x80) {
-				isCompressed = false;
-				b[3] &= 0x7F;
-			}
-
 			uint blockSize = 0;
-			for (int i = b.Length - 1; i >= 0; i--) {
-				blockSize |= ((uint)b[i] << (i * 8));
+			bool isCompressed = true;
+			int bytesRead;
+			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
+			try {
+				// read block size
+				int blockSizeLength = 4;
+				bytesRead = await _innerStream.ReadAsync(buffer, 0, blockSizeLength).ConfigureAwait(false);
+				if (bytesRead != blockSizeLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+				if ((buffer[3] & 0x80) == 0x80) {
+					isCompressed = false;
+					buffer[3] &= 0x7F;
+				}
+
+				for (int i = 0, ii = 0; i < blockSizeLength; i++, ii++) {
+					blockSize |= ((uint)buffer[i] << (ii * 8));
+				}
+			}
+			finally {
+				ArrayPool<byte>.Shared.Return(buffer);
 			}
 
 			if (blockSize > (uint)_outputBufferSize) {
@@ -1392,18 +1496,24 @@ namespace IonKiwi.lz4 {
 					// calculate hash
 					uint xxh = GetContentChecksumNoReset();
 
-					// read hash
-					b = new byte[4];
-					bytesRead = await _innerStream.ReadAsync(b, 0, b.Length).ConfigureAwait(false);
-					if (bytesRead != b.Length) {
-						throw new EndOfStreamException("Unexpected end of stream");
-					}
+					buffer = ArrayPool<byte>.Shared.Rent(4);
+					try {
+						// read hash
+						int hashLength = 4;
+						bytesRead = await _innerStream.ReadAsync(buffer, 0, hashLength).ConfigureAwait(false);
+						if (bytesRead != hashLength) {
+							throw new EndOfStreamException("Unexpected end of stream");
+						}
 
-					if (b[0] != (byte)(xxh & 0xFF) ||
-						b[1] != (byte)((xxh >> 8) & 0xFF) ||
-						b[2] != (byte)((xxh >> 16) & 0xFF) ||
-						b[3] != (byte)((xxh >> 24) & 0xFF)) {
-						throw new Exception("Content checksum did not match");
+						if (buffer[0] != (byte)(xxh & 0xFF) ||
+							buffer[1] != (byte)((xxh >> 8) & 0xFF) ||
+							buffer[2] != (byte)((xxh >> 16) & 0xFF) ||
+							buffer[3] != (byte)((xxh >> 24) & 0xFF)) {
+							throw new Exception("Content checksum did not match");
+						}
+					}
+					finally {
+						ArrayPool<byte>.Shared.Return(buffer);
 					}
 				}
 
@@ -1417,14 +1527,20 @@ namespace IonKiwi.lz4 {
 			_blockCount++;
 
 			if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
-				// read block checksum
-				b = new byte[4];
-				bytesRead = await _innerStream.ReadAsync(b, 0, b.Length).ConfigureAwait(false);
-				if (bytesRead != b.Length) { throw new EndOfStreamException("Unexpected end of stream"); }
-
 				uint checksum = 0;
-				for (int i = b.Length - 1; i >= 0; i--) {
-					checksum |= ((uint)b[i] << (i * 8));
+				buffer = ArrayPool<byte>.Shared.Rent(4);
+				try {
+					// read block checksum
+					int blockChecksumLength = 4;
+					bytesRead = await _innerStream.ReadAsync(buffer, 0, blockChecksumLength).ConfigureAwait(false);
+					if (bytesRead != blockChecksumLength) { throw new EndOfStreamException("Unexpected end of stream"); }
+
+					for (int i = blockChecksumLength - 1; i >= 0; i--) {
+						checksum |= ((uint)buffer[i] << (i * 8));
+					}
+				}
+				finally {
+					ArrayPool<byte>.Shared.Return(buffer);
 				}
 				// verify checksum
 				uint xxh = GetBlockChecksumInputBuffer(blockSize);
@@ -1586,7 +1702,6 @@ namespace IonKiwi.lz4 {
 				isCompressed = true;
 			}
 
-			byte[] b = new byte[4];
 			_headerBuffer[_headerBufferSize++] = (byte)((uint)targetSize & 0xFF);
 			_headerBuffer[_headerBufferSize++] = (byte)(((uint)targetSize >> 8) & 0xFF);
 			_headerBuffer[_headerBufferSize++] = (byte)(((uint)targetSize >> 16) & 0xFF);
@@ -1687,7 +1802,6 @@ namespace IonKiwi.lz4 {
 				isCompressed = true;
 			}
 
-			byte[] b = new byte[4];
 			_headerBuffer[_headerBufferSize++] = (byte)((uint)targetSize & 0xFF);
 			_headerBuffer[_headerBufferSize++] = (byte)(((uint)targetSize >> 8) & 0xFF);
 			_headerBuffer[_headerBufferSize++] = (byte)(((uint)targetSize >> 16) & 0xFF);
@@ -1905,12 +2019,17 @@ namespace IonKiwi.lz4 {
 				return _outputBufferRef[_ringbufferOffset + _outputBufferOffset++];
 			}
 			else {
-				byte[] data = new byte[1];
-				int x = CompressData(data, 0, 1);
-				if (x == 0) {
-					return -1; // stream end
+				byte[] buffer = ArrayPool<byte>.Shared.Rent(1);
+				try {
+					int x = CompressData(buffer, 0, 1);
+					if (x == 0) {
+						return -1; // stream end
+					}
+					return buffer[0];
 				}
-				return data[0];
+				finally {
+					ArrayPool<byte>.Shared.Return(buffer);
+				}
 			}
 		}
 
@@ -2013,9 +2132,14 @@ namespace IonKiwi.lz4 {
 				_inputBufferRef[_ringbufferOffset + _inputBufferOffset++] = value;
 			}
 			else {
-				byte[] b = new byte[1];
-				b[0] = value;
-				DecompressData(b, 0, 1);
+				byte[] buffer = ArrayPool<byte>.Shared.Rent(1);
+				try {
+					buffer[0] = value;
+					DecompressData(buffer, 0, 1);
+				}
+				finally {
+					ArrayPool<byte>.Shared.Return(buffer);
+				}
 			}
 		}
 
@@ -2309,8 +2433,8 @@ namespace IonKiwi.lz4 {
 				}
 
 				uint blockSize = 0;
-				for (int i = 3; i >= 0; i--) {
-					blockSize |= ((uint)_headerBuffer[i] << (i * 8));
+				for (int i = 0, ii = 0; i < 4; i++, ii++) {
+					blockSize |= ((uint)_headerBuffer[i] << (ii * 8));
 				}
 
 				if (blockSize > (uint)_outputBufferSize) {
@@ -2554,17 +2678,17 @@ namespace IonKiwi.lz4 {
 				}
 			}
 			else if (_currentMode == 4) {
-				for (int i = _headerBufferSize, ii = 0; i < 8 && ii < count; i++, ii++) {
+				for (int i = _headerBufferSize, ii = 0; i < 14 && ii < count; i++, ii++) {
 					_headerBuffer[i] = data[offset + ii];
 					_headerBufferSize++;
 					consumed++;
 				}
 
-				if (_headerBufferSize == 8) {
+				if (_headerBufferSize == 14) {
 
 					_contentSize = 0;
-					for (int i = 9; i >= 2; i--) {
-						_contentSize |= ((ulong)_headerBuffer[i] << (i * 8));
+					for (int i = 6, ii = 0; i < 6 + 8; i++, ii++) {
+						_contentSize |= ((ulong)_headerBuffer[i] << (ii * 8));
 					}
 
 					_currentMode = 3;
@@ -2599,8 +2723,8 @@ namespace IonKiwi.lz4 {
 					_frameCount++;
 
 					uint frameSize = 0;
-					for (int i = _headerBufferSize - 1; i >= 4; i--) {
-						frameSize |= ((uint)_headerBuffer[i] << (i * 8));
+					for (int i = 4, ii = 0; i < 4 + 4; i++, ii++) {
+						frameSize |= ((uint)_headerBuffer[i] << (ii * 8));
 					}
 
 					_outputBufferSize = (int)frameSize;

@@ -37,6 +37,7 @@
 */
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -147,24 +148,38 @@ namespace IonKiwi.lz4 {
 
 		private sealed class AllocWrapper : IDisposable {
 
-			private IntPtr _handle;
+			private readonly GCHandle _handle;
+			private readonly byte[] _buffer;
+			private bool _disposed;
 
-			private AllocWrapper(IntPtr handle) {
+			private AllocWrapper(GCHandle handle, byte[] buffer) {
 				_handle = handle;
+				_buffer = buffer;
+			}
+
+			public bool IsDisposed {
+				get { return _disposed; }
 			}
 
 			public static unsafe T* Alloc<T>(bool zero, out IDisposable disposable) where T : unmanaged {
 				int size = sizeof(T);
-				var handle = Marshal.AllocHGlobal(size);
+				var memory = ArrayPool<byte>.Shared.Rent(size);
+				var handle = GCHandle.Alloc(memory, GCHandleType.Pinned);
+				var addr = handle.AddrOfPinnedObject();
 				if (zero) {
-					Unsafe.InitBlock((byte*)handle, 0, (uint)size);
+					Unsafe.InitBlock((byte*)addr, 0, (uint)size);
 				}
-				disposable = new AllocWrapper(handle);
-				return (T*)handle;
+				disposable = new AllocWrapper(handle, memory);
+				return (T*)addr;
 			}
 
 			public void Dispose() {
-				Marshal.FreeHGlobal(_handle);
+				if (_disposed) {
+					return;
+				}
+				_handle.Free();
+				ArrayPool<byte>.Shared.Return(_buffer);
+				_disposed = true;
 			}
 		}
 
