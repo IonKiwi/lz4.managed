@@ -3,6 +3,28 @@
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<PackageId>IonKiwi.lz4.managed</PackageId>
+		<Version>1.0.3</Version>
+		<Authors>Ewout van der Linden</Authors>
+		<SignAssembly>true</SignAssembly>
+		<DelaySign>true</DelaySign>
+		<AssemblyOriginatorKeyFile>235_p384.snk</AssemblyOriginatorKeyFile>
+		<Copyright>Ewout van der Linden</Copyright>
+		<Description>This package is a translation of the lz4 C sources (1.9.2) to C#.
+
+LZ4 has been written by Yann Collet and the original sources can be found on https://github.com/lz4/lz4
+
+LZ4 is a very fast lossless compression algorithm, providing compression speed at 400 MB/s per core, with near-linear scalability for multi-threaded applications. It also features an extremely fast decoder, with speed in multiple GB/s per core, typically reaching RAM speed limits on multi-core systems. 
+
+The original C sources are translated to C#.
+
+The implementation is compliant with the LZ4 Frame Format (v1.6.1).</Description>
+		<PackageTags>lz4 lz4hc lz4.net managed async stream compression framing</PackageTags>
+		<PackageProjectUrl>https://github.com/IonKiwi/lz4.managed</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/IonKiwi/lz4.managed</RepositoryUrl>
+		<PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
+		<AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>
