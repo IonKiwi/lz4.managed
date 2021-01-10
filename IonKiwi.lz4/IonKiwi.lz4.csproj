@@ -12,7 +12,7 @@
 		<AssemblyOriginatorKeyFile>235_p384.snk</AssemblyOriginatorKeyFile>
 		<Copyright>Ewout van der Linden</Copyright>
 		<Description>
-			This package is a translation of the lz4 C sources (1.9.2) to C#.
+			This package is a translation of the lz4 C sources (1.9.3) to C#.
 
 			LZ4 has been written by Yann Collet and the original sources can be found on https://github.com/lz4/lz4
 
