@@ -2643,6 +2643,11 @@ namespace IonKiwi.lz4 {
 			limitedOutput_directive limit,
 			byte* oend) {
 
+			// NOTE: translation: replaced define with inline deref
+			//#define ip      (*_ip)
+			//#define op      (*_op)
+			//#define anchor  (*_anchor)
+
 			size_t length;
 			byte* token = (*op)++;
 
