@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
+		<TargetFrameworks>netstandard2.0;netstandard2.1;net5</TargetFrameworks>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageId>IonKiwi.lz4.managed</PackageId>
@@ -37,6 +37,10 @@
 		<SN>"C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\sn.exe"</SN>
 		<!--<EmbedUntrackedSources>true</EmbedUntrackedSources>-->
 	</PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0' Or '$(TargetFramework)' == 'netstandard2.1'">
+    <NoWarn>$(NoWarn);nullable</NoWarn>
+  </PropertyGroup>
 
 	<ItemGroup>
 		<EmbeddedFiles Include="$(GeneratedAssemblyInfoFile)" />

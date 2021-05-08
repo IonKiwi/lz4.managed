@@ -34,6 +34,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
@@ -125,7 +126,6 @@ namespace IonKiwi.lz4 {
 			_leaveInnerStreamOpen = leaveInnerStreamOpen;
 			_highCompression = highCompression;
 
-			_headerBuffer = ArrayPool<byte>.Shared.Rent(23);
 			Init();
 		}
 
@@ -137,7 +137,6 @@ namespace IonKiwi.lz4 {
 			_compressionMode = CompressionMode.Decompress;
 			_leaveInnerStreamOpen = leaveInnerStreamOpen;
 
-			_headerBuffer = ArrayPool<byte>.Shared.Rent(23);
 			Init();
 		}
 
@@ -212,7 +211,9 @@ namespace IonKiwi.lz4 {
 			if (_lz4DecodeStreamDispose != null) { _lz4DecodeStreamDispose.Dispose(); _lz4DecodeStreamDispose = null; }
 		}
 
+		[MemberNotNull(nameof(_headerBuffer))]
 		private unsafe void Init() {
+			_headerBuffer = ArrayPool<byte>.Shared.Rent(23);
 			if (_compressionMode == CompressionMode.Compress) {
 				if (!_highCompression) {
 					_unsafeData._lz4Stream = lz4.LZ4_createStream(out _lz4StreamDispose);
@@ -867,7 +868,7 @@ namespace IonKiwi.lz4 {
 				}
 
 				_innerStream.Write(buffer, 0, 4);
-				_innerStream.Write(_outputBufferRef, 0, targetSize);
+				_innerStream.Write(_outputBufferRef!, 0, targetSize);
 
 				if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
 					uint xxh = GetBlockChecksumOutputBuffer((uint)targetSize);
@@ -932,7 +933,7 @@ namespace IonKiwi.lz4 {
 				//	LZ4_loadDictHC(_lz4HCStream, null, 0);
 				//}
 
-				Buffer.BlockCopy(_inputBufferRef, _ringbufferOffset, _outputBufferRef, 0, _inputBufferOffset);
+				Buffer.BlockCopy(_inputBufferRef!, _ringbufferOffset, _outputBufferRef!, 0, _inputBufferOffset);
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
@@ -947,7 +948,7 @@ namespace IonKiwi.lz4 {
 				//	LZ4_loadDictHC(_lz4HCStream, null, 0);
 				//}
 
-				Buffer.BlockCopy(_inputBufferRef, _ringbufferOffset, _outputBufferRef, 0, _inputBufferOffset);
+				Buffer.BlockCopy(_inputBufferRef!, _ringbufferOffset, _outputBufferRef!, 0, _inputBufferOffset);
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
@@ -971,7 +972,7 @@ namespace IonKiwi.lz4 {
 				}
 
 				await _innerStream.WriteAsync(buffer, 0, 4).ConfigureAwait(false);
-				await _innerStream.WriteAsync(_outputBufferRef, 0, targetSize).ConfigureAwait(false);
+				await _innerStream.WriteAsync(_outputBufferRef!, 0, targetSize).ConfigureAwait(false);
 
 				if ((_checksumMode & LZ4FrameChecksumMode.Block) == LZ4FrameChecksumMode.Block) {
 					uint xxh = GetBlockChecksumOutputBuffer((uint)targetSize);
@@ -1392,7 +1393,7 @@ namespace IonKiwi.lz4 {
 			}
 
 			// read block data
-			bytesRead = _innerStream.Read(_inputBufferRef, 0, (int)blockSize);
+			bytesRead = _innerStream.Read(_inputBufferRef!, 0, (int)blockSize);
 			if (bytesRead != blockSize) { throw new EndOfStreamException("Unexpected end of stream"); }
 
 			_blockCount++;
@@ -1524,7 +1525,7 @@ namespace IonKiwi.lz4 {
 			}
 
 			// read block data
-			bytesRead = await _innerStream.ReadAsync(_inputBufferRef, 0, (int)blockSize).ConfigureAwait(false);
+			bytesRead = await _innerStream.ReadAsync(_inputBufferRef!, 0, (int)blockSize).ConfigureAwait(false);
 			if (bytesRead != blockSize) { throw new EndOfStreamException("Unexpected end of stream"); }
 
 			_blockCount++;
@@ -1561,7 +1562,7 @@ namespace IonKiwi.lz4 {
 			if (_ringbufferOffset > _outputBufferSize) _ringbufferOffset = 0;
 
 			if (!isCompressed) {
-				Buffer.BlockCopy(_inputBufferRef, 0, _outputBufferRef, _ringbufferOffset, (int)blockSize);
+				Buffer.BlockCopy(_inputBufferRef!, 0, _outputBufferRef!, _ringbufferOffset, (int)blockSize);
 				_outputBufferBlockSize = (int)blockSize;
 			}
 			else {
@@ -1624,7 +1625,7 @@ namespace IonKiwi.lz4 {
 			// compress 1 block
 			int bytesRead;
 			do {
-				bytesRead = _innerStream.Read(_inputBufferRef, _ringbufferOffset + _inputBufferOffset, chunk);
+				bytesRead = _innerStream.Read(_inputBufferRef!, _ringbufferOffset + _inputBufferOffset, chunk);
 				if (bytesRead == 0) {
 					_isCompressed = true;
 					break;
@@ -1729,7 +1730,7 @@ namespace IonKiwi.lz4 {
 			// compress 1 block
 			int bytesRead;
 			do {
-				bytesRead = await _innerStream.ReadAsync(_inputBufferRef, _ringbufferOffset + _inputBufferOffset, chunk).ConfigureAwait(false);
+				bytesRead = await _innerStream.ReadAsync(_inputBufferRef!, _ringbufferOffset + _inputBufferOffset, chunk).ConfigureAwait(false);
 				if (bytesRead == 0) {
 					_isCompressed = true;
 					break;
@@ -1778,7 +1779,7 @@ namespace IonKiwi.lz4 {
 				//	LZ4_loadDictHC(_lz4HCStream, null, 0);
 				//}
 
-				Buffer.BlockCopy(_inputBufferRef, _ringbufferOffset, _outputBufferRef, 0, _inputBufferOffset);
+				Buffer.BlockCopy(_inputBufferRef!, _ringbufferOffset, _outputBufferRef!, 0, _inputBufferOffset);
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
@@ -1793,7 +1794,7 @@ namespace IonKiwi.lz4 {
 				//	LZ4_loadDictHC(_lz4HCStream, null, 0);
 				//}
 
-				Buffer.BlockCopy(_inputBufferRef, _ringbufferOffset, _outputBufferRef, 0, _inputBufferOffset);
+				Buffer.BlockCopy(_inputBufferRef!, _ringbufferOffset, _outputBufferRef!, 0, _inputBufferOffset);
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
@@ -1864,7 +1865,7 @@ namespace IonKiwi.lz4 {
 				else if (_currentMode == 2) {
 					if (_outputBufferBlockSize == 0) { throw new Exception("should not have happend, Read(): compress, _outputBufferBlockSize == 0"); }
 					int chunk = consumed = Math.Min(_outputBufferBlockSize - _outputBufferOffset, count);
-					Buffer.BlockCopy(_outputBufferRef, _outputBufferOffset, buffer, offset, chunk);
+					Buffer.BlockCopy(_outputBufferRef!, _outputBufferOffset, buffer, offset, chunk);
 					_outputBufferOffset += chunk;
 					if (_outputBufferOffset == _outputBufferBlockSize) {
 						_inputBufferOffset = 0; // reset before calling WriteEndFrame() !!
@@ -1956,7 +1957,7 @@ namespace IonKiwi.lz4 {
 				else if (_currentMode == 2) {
 					if (_outputBufferBlockSize == 0) { throw new Exception("should not have happend, Read(): compress, _outputBufferBlockSize == 0"); }
 					int chunk = consumed = Math.Min(_outputBufferBlockSize - _outputBufferOffset, count);
-					Buffer.BlockCopy(_outputBufferRef, _outputBufferOffset, buffer, offset, chunk);
+					Buffer.BlockCopy(_outputBufferRef!, _outputBufferOffset, buffer, offset, chunk);
 					_outputBufferOffset += chunk;
 					if (_outputBufferOffset == _outputBufferBlockSize) {
 						_inputBufferOffset = 0; // reset before calling WriteEndFrame() !!
@@ -2049,7 +2050,7 @@ namespace IonKiwi.lz4 {
 				while (count > 0) {
 					int chunk = Math.Min(count, _outputBufferBlockSize - _outputBufferOffset);
 					if (chunk > 0) {
-						Buffer.BlockCopy(_outputBufferRef, _ringbufferOffset + _outputBufferOffset, buffer, offset, chunk);
+						Buffer.BlockCopy(_outputBufferRef!, _ringbufferOffset + _outputBufferOffset, buffer, offset, chunk);
 
 						_outputBufferOffset += chunk;
 						offset += chunk;
@@ -2083,7 +2084,7 @@ namespace IonKiwi.lz4 {
 				while (count > 0) {
 					int chunk = Math.Min(count, _outputBufferBlockSize - _outputBufferOffset);
 					if (chunk > 0) {
-						Buffer.BlockCopy(_outputBufferRef, _ringbufferOffset + _outputBufferOffset, buffer, offset, chunk);
+						Buffer.BlockCopy(_outputBufferRef!, _ringbufferOffset + _outputBufferOffset, buffer, offset, chunk);
 
 						_outputBufferOffset += chunk;
 						offset += chunk;
@@ -2104,7 +2105,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback callback, object state) {
+		public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) {
 			CheckDisposed();
 			return AsApm(ReadAsync(buffer, offset, count), callback, state);
 		}
@@ -2162,7 +2163,7 @@ namespace IonKiwi.lz4 {
 				while (count > 0) {
 					int chunk = Math.Min(count, _inputBufferSize - _inputBufferOffset);
 					if (chunk > 0) {
-						Buffer.BlockCopy(buffer, offset, _inputBufferRef, _ringbufferOffset + _inputBufferOffset, chunk);
+						Buffer.BlockCopy(buffer, offset, _inputBufferRef!, _ringbufferOffset + _inputBufferOffset, chunk);
 
 						offset += chunk;
 						count -= chunk;
@@ -2194,7 +2195,7 @@ namespace IonKiwi.lz4 {
 				while (count > 0) {
 					int chunk = Math.Min(count, _inputBufferSize - _inputBufferOffset);
 					if (chunk > 0) {
-						Buffer.BlockCopy(buffer, offset, _inputBufferRef, _ringbufferOffset + _inputBufferOffset, chunk);
+						Buffer.BlockCopy(buffer, offset, _inputBufferRef!, _ringbufferOffset + _inputBufferOffset, chunk);
 
 						offset += chunk;
 						count -= chunk;
@@ -2210,7 +2211,7 @@ namespace IonKiwi.lz4 {
 			}
 		}
 
-		public override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback callback, object state) {
+		public override IAsyncResult BeginWrite(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state) {
 			CheckDisposed();
 			return AsApm(WriteAsync(buffer, offset, count), callback, state);
 		}
@@ -2242,14 +2243,14 @@ namespace IonKiwi.lz4 {
 					int l = _outputBufferSize;
 					int remaining = l - _outputBufferOffset;
 					int chunk = consumed = Math.Min(remaining, count);
-					Buffer.BlockCopy(data, offset, _outputBufferRef, _outputBufferOffset, chunk);
+					Buffer.BlockCopy(data, offset, _outputBufferRef!, _outputBufferOffset, chunk);
 					_outputBufferOffset += chunk;
 					remaining = l - _outputBufferOffset;
 					if (remaining == 0) {
 						int id = (_headerBuffer[0] & 0xF);
 
 						byte[] userData = new byte[l];
-						Buffer.BlockCopy(_outputBufferRef, 0, userData, 0, l);
+						Buffer.BlockCopy(_outputBufferRef!, 0, userData, 0, l);
 						var handler = UserDataFrameRead;
 						if (handler != null) {
 							LZ4UserDataFrameEventArgs e = new LZ4UserDataFrameEventArgs(id, userData);
@@ -2285,14 +2286,14 @@ namespace IonKiwi.lz4 {
 					int l = _outputBufferSize;
 					int remaining = l - _outputBufferOffset;
 					int chunk = consumed = Math.Min(remaining, count);
-					Buffer.BlockCopy(data, offset, _outputBufferRef, _outputBufferOffset, chunk);
+					Buffer.BlockCopy(data, offset, _outputBufferRef!, _outputBufferOffset, chunk);
 					_outputBufferOffset += chunk;
 					remaining = l - _outputBufferOffset;
 					if (remaining == 0) {
 						int id = (_headerBuffer[0] & 0xF);
 
 						byte[] userData = new byte[l];
-						Buffer.BlockCopy(_outputBufferRef, 0, userData, 0, l);
+						Buffer.BlockCopy(_outputBufferRef!, 0, userData, 0, l);
 						var handler = UserDataFrameRead;
 						if (handler != null) {
 							LZ4UserDataFrameEventArgs e = new LZ4UserDataFrameEventArgs(id, userData);
@@ -2347,7 +2348,7 @@ namespace IonKiwi.lz4 {
 					_outputBufferBlockSize = decompressedSize;
 				}
 
-				_innerStream.Write(_outputBufferRef, _ringbufferOffset, _outputBufferBlockSize);
+				_innerStream.Write(_outputBufferRef!, _ringbufferOffset, _outputBufferBlockSize);
 
 				if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
 					XXH_errorcode status = UpdateContentChecksumOutputBuffer();
@@ -2389,7 +2390,7 @@ namespace IonKiwi.lz4 {
 				if (_ringbufferOffset > _outputBufferSize) _ringbufferOffset = 0;
 
 				if (!_isCompressed) {
-					Buffer.BlockCopy(_inputBufferRef, 0, _outputBufferRef, _ringbufferOffset, _targetBufferSize);
+					Buffer.BlockCopy(_inputBufferRef!, 0, _outputBufferRef!, _ringbufferOffset, _targetBufferSize);
 					_outputBufferBlockSize = _targetBufferSize;
 				}
 				else {
@@ -2400,7 +2401,7 @@ namespace IonKiwi.lz4 {
 					_outputBufferBlockSize = decompressedSize;
 				}
 
-				await _innerStream.WriteAsync(_outputBufferRef, _ringbufferOffset, _outputBufferBlockSize).ConfigureAwait(false);
+				await _innerStream.WriteAsync(_outputBufferRef!, _ringbufferOffset, _outputBufferBlockSize).ConfigureAwait(false);
 
 				if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
 					XXH_errorcode status = UpdateContentChecksumOutputBuffer();
@@ -2496,7 +2497,7 @@ namespace IonKiwi.lz4 {
 			int remaining = _targetBufferSize - _inputBufferOffset;
 
 			int chunk = consumed = Math.Min(remaining, count);
-			Buffer.BlockCopy(data, offset, _inputBufferRef, _inputBufferOffset, chunk);
+			Buffer.BlockCopy(data, offset, _inputBufferRef!, _inputBufferOffset, chunk);
 			_inputBufferOffset += chunk;
 			remaining = _targetBufferSize - _inputBufferOffset;
 			if (remaining == 0) {
@@ -2744,14 +2745,14 @@ namespace IonKiwi.lz4 {
 			return consumed;
 		}
 
-		private static IAsyncResult AsApm<T>(Task<T> task, AsyncCallback callback, object state) {
+		private static IAsyncResult AsApm<T>(Task<T> task, AsyncCallback? callback, object? state) {
 			if (task == null) {
 				throw new ArgumentNullException(nameof(task));
 			}
 			var tcs = new TaskCompletionSource<T>(state);
 			task.ContinueWith(t => {
 				if (t.IsFaulted) {
-					tcs.TrySetException(t.Exception.InnerExceptions);
+					tcs.TrySetException(t.Exception!.InnerExceptions);
 				}
 				else if (t.IsCanceled) {
 					tcs.TrySetCanceled();
@@ -2766,14 +2767,14 @@ namespace IonKiwi.lz4 {
 			return tcs.Task;
 		}
 
-		private static IAsyncResult AsApm(Task task, AsyncCallback callback, object state) {
+		private static IAsyncResult AsApm(Task task, AsyncCallback? callback, object? state) {
 			if (task == null) {
 				throw new ArgumentNullException(nameof(task));
 			}
 			var tcs = new TaskCompletionSource<object?>(state);
 			task.ContinueWith(t => {
 				if (t.IsFaulted) {
-					tcs.TrySetException(t.Exception.InnerExceptions);
+					tcs.TrySetException(t.Exception!.InnerExceptions);
 				}
 				else if (t.IsCanceled) {
 					tcs.TrySetCanceled();
