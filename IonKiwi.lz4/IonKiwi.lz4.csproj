@@ -7,6 +7,8 @@
 		<PackageId>IonKiwi.lz4.managed</PackageId>
 		<Version>1.0.4</Version>
 		<Authors>Ewout van der Linden</Authors>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
 		<SignAssembly>true</SignAssembly>
 		<DelaySign>true</DelaySign>
 		<AssemblyOriginatorKeyFile>235_p384.snk</AssemblyOriginatorKeyFile>

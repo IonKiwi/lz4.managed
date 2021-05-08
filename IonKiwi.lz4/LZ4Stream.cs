@@ -80,8 +80,8 @@ namespace IonKiwi.lz4 {
 		private long _frameCount = 0;
 		private bool _interactiveRead = false;
 
-		private byte[] _inputBufferRef = null;
-		private byte[] _outputBufferRef = null;
+		private byte[]? _inputBufferRef = null;
+		private byte[]? _outputBufferRef = null;
 		private GCHandle _inputBufferHandle;
 		private GCHandle _outputBufferHandle;
 
@@ -93,10 +93,10 @@ namespace IonKiwi.lz4 {
 		private int _ringbufferOffset = 0;
 		private long _blockCount = 0;
 
-		private IDisposable _lz4StreamDispose = null;
-		private IDisposable _lz4HCStreamDispose = null;
-		private IDisposable _lz4DecodeStreamDispose = null;
-		private IDisposable _contentHashStateDispose = null;
+		private IDisposable? _lz4StreamDispose = null;
+		private IDisposable? _lz4HCStreamDispose = null;
+		private IDisposable? _lz4DecodeStreamDispose = null;
+		private IDisposable? _contentHashStateDispose = null;
 
 		private UnsafeData _unsafeData = new UnsafeData();
 
@@ -109,40 +109,44 @@ namespace IonKiwi.lz4 {
 			public XXH32_state* _contentHashState = null;
 		}
 
-		public event EventHandler<LZ4UserDataFrameEventArgs> UserDataFrameRead;
+		public event EventHandler<LZ4UserDataFrameEventArgs>? UserDataFrameRead;
 
-		private LZ4Stream() {
-
-		}
-
-		public static LZ4Stream CreateCompressor(Stream innerStream, LZ4StreamMode streamMode, LZ4FrameBlockMode blockMode = LZ4FrameBlockMode.Linked, LZ4FrameBlockSize blockSize = LZ4FrameBlockSize.Max1MB, LZ4FrameChecksumMode checksumMode = LZ4FrameChecksumMode.Content, long? maxFrameSize = null, bool highCompression = false, bool leaveInnerStreamOpen = false) {
+		private LZ4Stream(Stream innerStream, LZ4StreamMode streamMode, LZ4FrameBlockMode blockMode, LZ4FrameBlockSize blockSize, LZ4FrameChecksumMode checksumMode, long? maxFrameSize, bool highCompression, bool leaveInnerStreamOpen) {
 			if (innerStream == null) { throw new ArgumentNullException(nameof(innerStream)); }
 			if (maxFrameSize.HasValue && maxFrameSize.Value <= 0) { throw new ArgumentOutOfRangeException(nameof(maxFrameSize)); }
 
-			LZ4Stream result = new LZ4Stream();
-			result._streamMode = streamMode;
-			result._innerStream = innerStream;
-			result._compressionMode = CompressionMode.Compress;
-			result._checksumMode = checksumMode;
-			result._blockMode = blockMode;
-			result._blockSize = blockSize;
-			result._maxFrameSize = maxFrameSize;
-			result._leaveInnerStreamOpen = leaveInnerStreamOpen;
-			result._highCompression = highCompression;
-			result.Init();
-			return result;
+			_streamMode = streamMode;
+			_innerStream = innerStream;
+			_compressionMode = CompressionMode.Compress;
+			_checksumMode = checksumMode;
+			_blockMode = blockMode;
+			_blockSize = blockSize;
+			_maxFrameSize = maxFrameSize;
+			_leaveInnerStreamOpen = leaveInnerStreamOpen;
+			_highCompression = highCompression;
+
+			_headerBuffer = ArrayPool<byte>.Shared.Rent(23);
+			Init();
+		}
+
+		private LZ4Stream(Stream innerStream, LZ4StreamMode streamMode, bool leaveInnerStreamOpen) {
+			if (innerStream == null) { throw new ArgumentNullException(nameof(innerStream)); }
+
+			_streamMode = streamMode;
+			_innerStream = innerStream;
+			_compressionMode = CompressionMode.Decompress;
+			_leaveInnerStreamOpen = leaveInnerStreamOpen;
+
+			_headerBuffer = ArrayPool<byte>.Shared.Rent(23);
+			Init();
+		}
+
+		public static LZ4Stream CreateCompressor(Stream innerStream, LZ4StreamMode streamMode, LZ4FrameBlockMode blockMode = LZ4FrameBlockMode.Linked, LZ4FrameBlockSize blockSize = LZ4FrameBlockSize.Max1MB, LZ4FrameChecksumMode checksumMode = LZ4FrameChecksumMode.Content, long? maxFrameSize = null, bool highCompression = false, bool leaveInnerStreamOpen = false) {
+			return new LZ4Stream(innerStream, streamMode, blockMode, blockSize, checksumMode, maxFrameSize, highCompression, leaveInnerStreamOpen);
 		}
 
 		public static LZ4Stream CreateDecompressor(Stream innerStream, LZ4StreamMode streamMode, bool leaveInnerStreamOpen = false) {
-			if (innerStream == null) { throw new ArgumentNullException(nameof(innerStream)); }
-
-			LZ4Stream result = new LZ4Stream();
-			result._streamMode = streamMode;
-			result._innerStream = innerStream;
-			result._compressionMode = CompressionMode.Decompress;
-			result._leaveInnerStreamOpen = leaveInnerStreamOpen;
-			result.Init();
-			return result;
+			return new LZ4Stream(innerStream, streamMode, leaveInnerStreamOpen);
 		}
 
 		public bool InteractiveRead {
@@ -198,7 +202,7 @@ namespace IonKiwi.lz4 {
 			if (_inputBufferHandle.IsAllocated) { _inputBufferHandle.Free(); _inputBufferHandle = default; _unsafeData._inputBufferPtr = null; }
 			if (_outputBufferHandle.IsAllocated) { _outputBufferHandle.Free(); _outputBufferHandle = default; _unsafeData._outputBufferPtr = null; }
 
-			if (_headerBuffer != null) { ArrayPool<byte>.Shared.Return(_headerBuffer); _headerBuffer = null; }
+			if (_headerBuffer != null) { ArrayPool<byte>.Shared.Return(_headerBuffer); _headerBuffer = Array.Empty<byte>(); }
 			if (_inputBufferRef != null) { ArrayPool<byte>.Shared.Return(_inputBufferRef); _inputBufferRef = null; }
 			if (_outputBufferRef != null) { ArrayPool<byte>.Shared.Return(_outputBufferRef); _outputBufferRef = null; }
 
@@ -209,7 +213,6 @@ namespace IonKiwi.lz4 {
 		}
 
 		private unsafe void Init() {
-			_headerBuffer = ArrayPool<byte>.Shared.Rent(23);
 			if (_compressionMode == CompressionMode.Compress) {
 				if (!_highCompression) {
 					_unsafeData._lz4Stream = lz4.LZ4_createStream(out _lz4StreamDispose);
@@ -2016,7 +2019,7 @@ namespace IonKiwi.lz4 {
 				if (_outputBufferOffset >= _outputBufferBlockSize && !AcquireNextBlock()) {
 					return -1; // end of stream
 				}
-				return _outputBufferRef[_ringbufferOffset + _outputBufferOffset++];
+				return _outputBufferRef![_ringbufferOffset + _outputBufferOffset++];
 			}
 			else {
 				byte[] buffer = ArrayPool<byte>.Shared.Rent(1);
@@ -2129,7 +2132,7 @@ namespace IonKiwi.lz4 {
 					FlushCurrentBlock(false);
 				}
 
-				_inputBufferRef[_ringbufferOffset + _inputBufferOffset++] = value;
+				_inputBufferRef![_ringbufferOffset + _inputBufferOffset++] = value;
 			}
 			else {
 				byte[] buffer = ArrayPool<byte>.Shared.Rent(1);
@@ -2767,7 +2770,7 @@ namespace IonKiwi.lz4 {
 			if (task == null) {
 				throw new ArgumentNullException(nameof(task));
 			}
-			var tcs = new TaskCompletionSource<object>(state);
+			var tcs = new TaskCompletionSource<object?>(state);
 			task.ContinueWith(t => {
 				if (t.IsFaulted) {
 					tcs.TrySetException(t.Exception.InnerExceptions);
