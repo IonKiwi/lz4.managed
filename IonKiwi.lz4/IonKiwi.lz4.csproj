@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>netstandard2.0;netstandard2.1;net5</TargetFrameworks>
+		<TargetFrameworks>netstandard2.0;netstandard2.1;net60</TargetFrameworks>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageId>IonKiwi.lz4.managed</PackageId>
-		<Version>1.0.4</Version>
+		<Version>1.0.5</Version>
 		<Authors>Ewout van der Linden</Authors>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -13,18 +13,14 @@
 		<DelaySign>true</DelaySign>
 		<AssemblyOriginatorKeyFile>235_p384.snk</AssemblyOriginatorKeyFile>
 		<Copyright>Ewout van der Linden</Copyright>
-		<Description>
-			This package is a translation of the lz4 C sources (1.9.3) to C#.
+		<Description>This package is a translation of the lz4 C sources (1.9.3) to C#.
 
-			LZ4 has been written by Yann Collet and the original sources can be found on https://github.com/lz4/lz4
+LZ4 has been written by Yann Collet and the original sources can be found on https://github.com/lz4/lz4
+LZ4 is a very fast lossless compression algorithm, providing compression speed at 400 MB/s per core, with near-linear scalability for multi-threaded applications. It also features an extremely fast decoder, with speed in multiple GB/s per core, typically reaching RAM speed limits on multi-core systems.
 
-			LZ4 is a very fast lossless compression algorithm, providing compression speed at 400 MB/s per core, with near-linear scalability for multi-threaded applications. It also features an extremely fast decoder, with speed in multiple GB/s per core, typically reaching RAM speed limits on multi-core systems.
-
-			The original C sources are translated to C#.
-
-			The implementation is compliant with the LZ4 Frame Format (v1.6.1).
-		</Description>
-		<PackageTags>lz4 lz4hc lz4.net managed async stream compression framing</PackageTags>
+The original C sources are translated to C#.
+The implementation is compliant with the LZ4 Frame Format (v1.6.1).</Description>
+		<PackageTags>lz4 lz4hc lz4.net managed async stream compression</PackageTags>
 		<PackageProjectUrl>https://github.com/IonKiwi/lz4.managed</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/IonKiwi/lz4.managed</RepositoryUrl>
 		<PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
@@ -48,11 +44,20 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+	  <None Include="..\README.md">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
 	</ItemGroup>
 
 	<PropertyGroup>
 		<DefineConstants Condition="'$(Signed)' == 'true'">$(DefineConstants);SIGNED</DefineConstants>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageReleaseNotes>removed .net5 tfm added .net 6.0</PackageReleaseNotes>
 	</PropertyGroup>
 
 
