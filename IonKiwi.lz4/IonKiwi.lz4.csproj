@@ -5,7 +5,7 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageId>IonKiwi.lz4.managed</PackageId>
-		<Version>1.0.5</Version>
+		<Version>1.0.6</Version>
 		<Authors>Ewout van der Linden</Authors>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -13,7 +13,7 @@
 		<DelaySign>true</DelaySign>
 		<AssemblyOriginatorKeyFile>235_p384.snk</AssemblyOriginatorKeyFile>
 		<Copyright>Ewout van der Linden</Copyright>
-		<Description>This package is a translation of the lz4 C sources (1.9.3) to C#.
+		<Description>This package is a translation of the lz4 C sources (1.9.4) to C#.
 
 LZ4 has been written by Yann Collet and the original sources can be found on https://github.com/lz4/lz4
 LZ4 is a very fast lossless compression algorithm, providing compression speed at 400 MB/s per core, with near-linear scalability for multi-threaded applications. It also features an extremely fast decoder, with speed in multiple GB/s per core, typically reaching RAM speed limits on multi-core systems.
@@ -31,6 +31,7 @@ The implementation is compliant with the LZ4 Frame Format (v1.6.1).</Description
 		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 		<ContinuousIntegrationBuild Condition="'$(CI_BUILD)' == 'true'">true</ContinuousIntegrationBuild>
 		<SN>"C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\sn.exe"</SN>
+		<Platforms>AnyCPU</Platforms>
 		<!--<EmbedUntrackedSources>true</EmbedUntrackedSources>-->
 	</PropertyGroup>
 
@@ -57,7 +58,14 @@ The implementation is compliant with the LZ4 Frame Format (v1.6.1).</Description
 	<PropertyGroup>
 		<DefineConstants Condition="'$(Signed)' == 'true'">$(DefineConstants);SIGNED</DefineConstants>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<PackageReleaseNotes>removed .net5 tfm added .net 6.0</PackageReleaseNotes>
+		<PackageReleaseNotes>
+			translated lz4 1.9.4
+
+			for net 6 use intrinsics
+			- BitOperations.TrailingZeroCount
+			- BitOperations.RotateLeft
+			- BinaryPrimitives.ReverseEndianness
+		</PackageReleaseNotes>
 	</PropertyGroup>
 
 
