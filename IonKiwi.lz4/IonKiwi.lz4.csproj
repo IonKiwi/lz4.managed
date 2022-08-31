@@ -62,8 +62,8 @@ The implementation is compliant with the LZ4 Frame Format (v1.6.1).</Description
 
 
 	<ItemGroup>
-		<PackageReference Include="System.Buffers" Version="4.5.0" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
-		<PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.6.0" />
+		<PackageReference Include="System.Buffers" Version="4.5.1" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+		<PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
 	</ItemGroup>
 
 	<Target Name="ReSignAfterBuild" AfterTargets="AfterBuild" Condition="'$(Signed)' == 'true'">
