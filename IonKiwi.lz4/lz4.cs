@@ -3682,60 +3682,62 @@ namespace IonKiwi.lz4 {
 			byte* match,
 			limitedOutput_directive limit,
 			byte* oend) {
-			var ip = (*_ip);
-			var op = (*_op);
-			var anchor = (*_anchor);
+
+			// NOTE: translate this in-place
+			//#define ip      (*_ip)
+			//#define op      (*_op)
+			//#define anchor  (*_anchor)
 
 			ulong length;
-			byte* token = op++;
+			byte* token = (*_op)++;
 
 			/* Encode Literal length */
-			length = (ulong)(ip - anchor);
+			length = (ulong)((*_ip) - (*_anchor));
 			/* Check output limit */
-			if (limit != limitedOutput_directive.notLimited && ((op + (length / 255) + length + (2 + 1 + LASTLITERALS)) > oend)) {
+			if (limit != limitedOutput_directive.notLimited && (((*_op) + (length / 255) + length + (2 + 1 + LASTLITERALS)) > oend)) {
 				//DEBUGLOG(6, "Not enough room to write %i literals (%i bytes remaining)",
-				//				(int)length, (int)(oend - op));
+				//				(int)length, (int)(oend - (*_op)));
 				return true;
 			}
 			if (length >= RUN_MASK) {
 				ulong len = length - RUN_MASK;
 				*token = (RUN_MASK << ML_BITS);
-				for (; len >= 255; len -= 255) *op++ = 255;
-				*op++ = (byte)len;
+				for (; len >= 255; len -= 255) *(*_op)++ = 255;
+				*(*_op)++ = (byte)len;
 			}
 			else {
 				*token = (byte)(length << ML_BITS);
 			}
 
 			/* Copy Literals */
-			LZ4_wildCopy8(op, anchor, op + length);
-			op += length;
+			LZ4_wildCopy8((*_op), (*_anchor), (*_op) + length);
+			(*_op) += length;
 
 			/* Encode Offset */
-			Debug.Assert((ip - match) <= LZ4_DISTANCE_MAX);   /* note : consider providing offset as a value, rather than as a pointer difference */
-			LZ4_writeLE16(op, (ushort)(ip - match)); op += 2;
+			Debug.Assert(((*_ip) - match) <= LZ4_DISTANCE_MAX);   /* note : consider providing offset as a value, rather than as a pointer difference */
+			LZ4_writeLE16((*_op), (ushort)((*_ip) - match)); (*_op) += 2;
 
 			/* Encode MatchLength */
 			Debug.Assert(matchLength >= MINMATCH);
 			length = (ulong)matchLength - MINMATCH;
-			if (limit != limitedOutput_directive.notLimited && (op + (length / 255) + (1 + LASTLITERALS) > oend)) {
+			if (limit != limitedOutput_directive.notLimited && ((*_op) + (length / 255) + (1 + LASTLITERALS) > oend)) {
 				//DEBUGLOG(6, "Not enough room to write match length");
 				return true;   /* Check output limit */
 			}
 			if (length >= ML_MASK) {
 				*token += ML_MASK;
 				length -= ML_MASK;
-				for (; length >= 510; length -= 510) { *op++ = 255; *op++ = 255; }
-				if (length >= 255) { length -= 255; *op++ = 255; }
-				*op++ = (byte)length;
+				for (; length >= 510; length -= 510) { *(*_op)++ = 255; *(*_op)++ = 255; }
+				if (length >= 255) { length -= 255; *(*_op)++ = 255; }
+				*(*_op)++ = (byte)length;
 			}
 			else {
 				*token += (byte)(length);
 			}
 
 			/* Prepare next loop */
-			ip += matchLength;
-			anchor = ip;
+			(*_ip) += matchLength;
+			(*_anchor) = (*_ip);
 
 			return false;
 		}
