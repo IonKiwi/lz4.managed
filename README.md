@@ -9,7 +9,7 @@ How to use
 
 **non-streaming**
 
-Non streaming version, works with managed byte arrays, uses the LZ4 Framing Format (v1.6.1).  
+Non streaming version, works with managed byte arrays, uses the LZ4 Framing Format (v1.6.2).  
 The compressed data that this stream creates is readable by the lz4 command line tools.  
 
 The Compress function has additional parameters to control the result.  
@@ -32,7 +32,7 @@ Example:
 
 **streaming**
 
-Streaming version, uses the LZ4 Framing Format (v1.6.1).  
+Streaming version, uses the LZ4 Framing Format (v1.6.2).  
 The compressed data that this stream creates is readable by the lz4 command line tools.  
 
 Example:  

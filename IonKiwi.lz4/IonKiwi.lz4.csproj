@@ -19,7 +19,7 @@ LZ4 has been written by Yann Collet and the original sources can be found on htt
 LZ4 is a very fast lossless compression algorithm, providing compression speed at 400 MB/s per core, with near-linear scalability for multi-threaded applications. It also features an extremely fast decoder, with speed in multiple GB/s per core, typically reaching RAM speed limits on multi-core systems.
 
 The original C sources are translated to C#.
-The implementation is compliant with the LZ4 Frame Format (v1.6.1).</Description>
+The implementation is compliant with the LZ4 Frame Format (v1.6.2).</Description>
 		<PackageTags>lz4 lz4hc lz4.net managed async stream compression</PackageTags>
 		<PackageProjectUrl>https://github.com/IonKiwi/lz4.managed</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/IonKiwi/lz4.managed</RepositoryUrl>
