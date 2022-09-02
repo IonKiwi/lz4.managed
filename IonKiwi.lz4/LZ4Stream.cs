@@ -804,7 +804,7 @@ namespace IonKiwi.lz4 {
 
 			if (_inputBufferOffset > 0) {
 				// flush current block first
-				FlushCurrentBlock(true, false);
+				FlushCurrentBlock(false, false);
 			}
 
 			FlushCurrentBlock(false, compressed);
@@ -818,7 +818,7 @@ namespace IonKiwi.lz4 {
 
 			if (_inputBufferOffset > 0) {
 				// flush current block first
-				await FlushCurrentBlockAsync(true, false).ConfigureAwait(false);
+				await FlushCurrentBlockAsync(false, false).ConfigureAwait(false);
 			}
 
 			await FlushCurrentBlockAsync(false, compressed).ConfigureAwait(false);
