@@ -5,7 +5,7 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageId>IonKiwi.lz4.managed</PackageId>
-		<Version>1.0.6</Version>
+		<Version>1.0.7</Version>
 		<Authors>Ewout van der Linden</Authors>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -59,19 +59,24 @@ The implementation is compliant with the LZ4 Frame Format (v1.6.2).</Description
 		<DefineConstants Condition="'$(Signed)' == 'true'">$(DefineConstants);SIGNED</DefineConstants>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageReleaseNotes>
+			v1.0.6
 			translated lz4 1.9.4
 
-			for net 6 use intrinsics
+			for .net 6 use intrinsics
 			- BitOperations.TrailingZeroCount
 			- BitOperations.RotateLeft
 			- BinaryPrimitives.ReverseEndianness
+
+			v1.0.7
+			- handle empty blocks
+			- remove System.Runtime.CompilerServices.Unsafe dependency from .net6 target
 		</PackageReleaseNotes>
 	</PropertyGroup>
 
 
 	<ItemGroup>
 		<PackageReference Include="System.Buffers" Version="4.5.1" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
-		<PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+		<PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" Condition="'$(TargetFramework)' == 'netstandard2.0' Or '$(TargetFramework)' == 'netstandard2.1'" />
 	</ItemGroup>
 
 	<Target Name="ReSignAfterBuild" AfterTargets="AfterBuild" Condition="'$(Signed)' == 'true'">
