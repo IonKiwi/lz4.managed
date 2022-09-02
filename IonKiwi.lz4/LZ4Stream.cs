@@ -157,6 +157,10 @@ namespace IonKiwi.lz4 {
 			get => _frameCount;
 		}
 
+		public long BlockCount {
+			get => _blockCount;
+		}
+
 		protected override void Dispose(bool disposing) {
 			try {
 				if (disposing) {
@@ -303,14 +307,14 @@ namespace IonKiwi.lz4 {
 		public override void Flush() {
 			CheckDisposed();
 			if (_compressionMode == CompressionMode.Compress && _streamMode == LZ4StreamMode.Write && _inputBufferOffset > 0) {
-				FlushCurrentBlock(false);
+				FlushCurrentBlock(false, false);
 			}
 		}
 
 		public override async Task FlushAsync(CancellationToken cancellationToken) {
 			CheckDisposed();
 			if (_compressionMode == CompressionMode.Compress && _streamMode == LZ4StreamMode.Write && _inputBufferOffset > 0) {
-				await FlushCurrentBlockAsync(false).ConfigureAwait(false);
+				await FlushCurrentBlockAsync(false, false).ConfigureAwait(false);
 			}
 		}
 
@@ -369,7 +373,7 @@ namespace IonKiwi.lz4 {
 
 			if (_inputBufferOffset > 0) {
 				// flush current block first
-				FlushCurrentBlock(true);
+				FlushCurrentBlock(true, false);
 			}
 
 			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
@@ -415,7 +419,7 @@ namespace IonKiwi.lz4 {
 
 			if (_inputBufferOffset > 0) {
 				// flush current block first
-				await FlushCurrentBlockAsync(true).ConfigureAwait(false);
+				await FlushCurrentBlockAsync(true, false).ConfigureAwait(false);
 			}
 
 			byte[] buffer = ArrayPool<byte>.Shared.Rent(4);
@@ -792,7 +796,35 @@ namespace IonKiwi.lz4 {
 			_frameCount++;
 		}
 
-		private unsafe void FlushCurrentBlock(bool suppressEndFrame) {
+		public void WriteEmptyBlock(bool compressed) {
+			CheckDisposed();
+			if (!(_compressionMode == CompressionMode.Compress && _streamMode == LZ4StreamMode.Write)) {
+				throw new NotSupportedException("Only supported in compress mode with a write mode stream");
+			}
+
+			if (_inputBufferOffset > 0) {
+				// flush current block first
+				FlushCurrentBlock(true, false);
+			}
+
+			FlushCurrentBlock(false, compressed);
+		}
+
+		public async PlatformTask WriteEmptyBlockAsync(bool compressed) {
+			CheckDisposed();
+			if (!(_compressionMode == CompressionMode.Compress && _streamMode == LZ4StreamMode.Write)) {
+				throw new NotSupportedException("Only supported in compress mode with a write mode stream");
+			}
+
+			if (_inputBufferOffset > 0) {
+				// flush current block first
+				await FlushCurrentBlockAsync(true, false).ConfigureAwait(false);
+			}
+
+			await FlushCurrentBlockAsync(false, compressed).ConfigureAwait(false);
+		}
+
+		private unsafe void FlushCurrentBlock(bool suppressEndFrame, bool forceCompression) {
 
 			//char* inputBufferPtr = &_inputBufferPtr[_ringbufferOffset];
 			//char* outputBufferPtr = &_outputBufferPtr[0];
@@ -833,7 +865,7 @@ namespace IonKiwi.lz4 {
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
-			else if (outputBytes >= _inputBufferOffset) {
+			else if (outputBytes >= _inputBufferOffset && !forceCompression) {
 				// compressed size is bigger than input size
 
 				// reset the stream
@@ -896,7 +928,7 @@ namespace IonKiwi.lz4 {
 			if (_ringbufferOffset > _inputBufferSize) _ringbufferOffset = 0;
 		}
 
-		private async PlatformTask FlushCurrentBlockAsync(bool suppressEndFrame) {
+		private async PlatformTask FlushCurrentBlockAsync(bool suppressEndFrame, bool forceCompression) {
 
 			//char* inputBufferPtr = &_inputBufferPtr[_ringbufferOffset];
 			//char* outputBufferPtr = &_outputBufferPtr[0];
@@ -937,7 +969,7 @@ namespace IonKiwi.lz4 {
 				targetSize = _inputBufferOffset;
 				isCompressed = false;
 			}
-			else if (outputBytes >= _inputBufferOffset) {
+			else if (outputBytes >= _inputBufferOffset && !forceCompression) {
 				// compressed size is bigger than input size
 
 				// reset the stream
@@ -1354,7 +1386,7 @@ namespace IonKiwi.lz4 {
 				throw new Exception("Block size exceeds maximum block size");
 			}
 
-			if (blockSize == 0) {
+			if (blockSize == 0 && isCompressed) {
 				// end marker
 
 				//_outputBufferSize = 0;
@@ -1435,7 +1467,7 @@ namespace IonKiwi.lz4 {
 			}
 			else {
 				int decompressedSize = DecompressInternal(currentRingbufferOffset, (int)blockSize);
-				if (decompressedSize <= 0) {
+				if (decompressedSize < 0) {
 					throw new Exception("Decompress failed");
 				}
 				_outputBufferBlockSize = decompressedSize;
@@ -1486,7 +1518,7 @@ namespace IonKiwi.lz4 {
 				throw new Exception("Block size exceeds maximum block size");
 			}
 
-			if (blockSize == 0) {
+			if (blockSize == 0 && isCompressed) {
 				// end marker
 
 				//_outputBufferSize = 0;
@@ -1567,7 +1599,7 @@ namespace IonKiwi.lz4 {
 			}
 			else {
 				int decompressedSize = DecompressInternal(currentRingbufferOffset, (int)blockSize);
-				if (decompressedSize <= 0) {
+				if (decompressedSize < 0) {
 					throw new Exception("Decompress failed");
 				}
 				_outputBufferBlockSize = decompressedSize;
@@ -2130,7 +2162,7 @@ namespace IonKiwi.lz4 {
 				if (!_hasWrittenStartFrame) { WriteStartFrame(); }
 
 				if (_inputBufferOffset >= _inputBufferSize) {
-					FlushCurrentBlock(false);
+					FlushCurrentBlock(false, false);
 				}
 
 				_inputBufferRef![_ringbufferOffset + _inputBufferOffset++] = value;
@@ -2170,7 +2202,7 @@ namespace IonKiwi.lz4 {
 						_inputBufferOffset += chunk;
 					}
 					else {
-						FlushCurrentBlock(false);
+						FlushCurrentBlock(false, false);
 					}
 				}
 			}
@@ -2202,7 +2234,7 @@ namespace IonKiwi.lz4 {
 						_inputBufferOffset += chunk;
 					}
 					else {
-						await FlushCurrentBlockAsync(false).ConfigureAwait(false);
+						await FlushCurrentBlockAsync(false, false).ConfigureAwait(false);
 					}
 				}
 			}
@@ -2342,7 +2374,7 @@ namespace IonKiwi.lz4 {
 				}
 				else {
 					int decompressedSize = DecompressInternal(currentRingbufferOffset, _targetBufferSize);
-					if (decompressedSize <= 0) {
+					if (decompressedSize < 0) {
 						throw new Exception("Decompress failed");
 					}
 					_outputBufferBlockSize = decompressedSize;
@@ -2395,7 +2427,7 @@ namespace IonKiwi.lz4 {
 				}
 				else {
 					int decompressedSize = DecompressInternal(currentRingbufferOffset, _targetBufferSize);
-					if (decompressedSize <= 0) {
+					if (decompressedSize < 0) {
 						throw new Exception("Decompress failed");
 					}
 					_outputBufferBlockSize = decompressedSize;
@@ -2445,7 +2477,7 @@ namespace IonKiwi.lz4 {
 					throw new Exception("Block size exceeds maximum block size");
 				}
 
-				if (blockSize == 0) {
+				if (blockSize == 0 && _isCompressed) {
 					// end marker
 
 					if ((_checksumMode & LZ4FrameChecksumMode.Content) == LZ4FrameChecksumMode.Content) {
