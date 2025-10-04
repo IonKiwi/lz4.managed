@@ -102,7 +102,8 @@ namespace IonKiwi.lz4 {
 	internal struct LZ4HC_match_t {
 		public int off;
 		public int len;
-	}
+        public int back;  /* negative value */
+    }
 
 	internal enum tableType_t { clearedTable = 0, byPtr, byU32, byU16 }
 
@@ -120,11 +121,13 @@ namespace IonKiwi.lz4 {
 
 	internal enum dictCtx_directive { noDictCtx, usingDictCtxHc }
 
-	internal enum lz4hc_strat_e { lz4hc, lz4opt }
+    internal enum lz4hc_strat_e { lz4mid, lz4hc, lz4opt }
 
-	internal enum repeat_state_e { rep_untested, rep_not, rep_confirmed }
+    internal enum repeat_state_e { rep_untested, rep_not, rep_confirmed }
 
 	internal enum HCfavor_e { favorCompressionRatio = 0, favorDecompressionSpeed }
+
+    internal enum LoadDict_mode_e  { _ld_fast, _ld_slow };
 
 	internal unsafe struct cParams_t {
 		public lz4hc_strat_e strat;
